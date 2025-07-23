@@ -511,24 +511,17 @@ func (s *Statistics) displayProgress() {
 
 // displayProgressParallel shows progress for parallel wallet generation
 func displayProgressParallel(stats *Statistics, statsManager *StatsManager, shutdownChan chan struct{}) {
-	for {
-		select {
-		case <-time.After(ProgressUpdateInterval):
-			// Get current stats from the stats manager
-			attempts := statsManager.GetTotalAttempts()
+	// Create a progress manager for thread-safe updates
+	progressManager := NewProgressManager(stats, statsManager)
 
-			// Update statistics
-			stats.update(attempts)
-			stats.displayProgress()
+	// Start the progress display loop
+	progressManager.Start()
 
-		case <-shutdownChan:
-			// Final update before exiting
-			attempts := statsManager.GetTotalAttempts()
-			stats.update(attempts)
-			stats.displayProgress()
-			return
-		}
-	}
+	// Wait for shutdown signal
+	<-shutdownChan
+
+	// Stop the progress manager
+	progressManager.Stop()
 }
 func privateToAddress(privateKey []byte) string {
 	// Get objects from pools
@@ -927,15 +920,16 @@ func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *Benchmark
 	lastStepTime := startTime
 	stepAttempts := int64(0)
 
-	// Create a ticker for regular progress updates
-	ticker := time.NewTicker(ProgressUpdateInterval)
-	defer ticker.Stop()
-
 	// Create a channel to signal benchmark completion
 	done := make(chan struct{})
 
-	// Start a goroutine to monitor progress
+	// We're using a custom progress display for benchmarks, so we don't need additional statistics tracking
+
+	// Start the progress display loop with custom update logic
 	go func() {
+		ticker := time.NewTicker(ProgressUpdateInterval)
+		defer ticker.Stop()
+
 		for {
 			select {
 			case <-ticker.C:
@@ -984,6 +978,8 @@ func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *Benchmark
 
 	// Run benchmark for specified number of attempts
 	batchSize := 1000 // Use larger batch size for benchmark
+
+	// Submit initial work items
 	for i := 0; i < workerPool.numWorkers; i++ {
 		workerPool.Submit(WorkItem{
 			Prefix:     pattern,
@@ -992,6 +988,60 @@ func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *Benchmark
 			BatchSize:  batchSize,
 		})
 	}
+
+	// Ensure we stop when we reach the target attempts
+	go func() {
+		// Use a timeout to prevent the benchmark from running forever
+		timeout := time.After(2 * time.Minute) // 2 minute timeout
+
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				currentAttempts := statsManager.GetTotalAttempts()
+
+				if currentAttempts >= maxAttempts {
+					close(done)
+					return
+				}
+
+				// Submit more work if needed
+				remainingAttempts := maxAttempts - currentAttempts
+				if remainingAttempts > 0 && remainingAttempts < int64(workerPool.numWorkers*batchSize) {
+					// Adjust batch size for final iterations to avoid overshooting
+					smallerBatchSize := int(remainingAttempts / int64(workerPool.numWorkers))
+					if smallerBatchSize > 0 {
+						for i := 0; i < workerPool.numWorkers; i++ {
+							workerPool.Submit(WorkItem{
+								Prefix:     pattern,
+								Suffix:     "",
+								IsChecksum: isChecksum,
+								BatchSize:  smallerBatchSize,
+							})
+						}
+					}
+				} else if remainingAttempts > 0 {
+					// Submit regular work items
+					for i := 0; i < workerPool.numWorkers; i++ {
+						workerPool.Submit(WorkItem{
+							Prefix:     pattern,
+							Suffix:     "",
+							IsChecksum: isChecksum,
+							BatchSize:  batchSize,
+						})
+					}
+				}
+
+			case <-timeout:
+				fmt.Println("\n⚠️ Benchmark timed out after 2 minutes")
+				fmt.Println("💡 Consider using a simpler pattern or fewer attempts")
+				close(done)
+				return
+			}
+		}
+	}()
 
 	// Wait for benchmark to complete or timeout
 	select {
@@ -1127,18 +1177,37 @@ This command generates addresses continuously and measures performance metrics
 including average speed, speed range, and consistency.
 
 Examples:
-  bloco-eth benchmark --attempts 10000 --pattern "fffff"
+  bloco-eth benchmark --attempts 10000 --pattern "abc"
   bloco-eth benchmark --attempts 50000 --pattern "abc" --checksum`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if benchmarkPattern == "" {
 			// Use default pattern if none specified
-			benchmarkPattern = "fffff" // 5 hex chars for reasonable benchmark
+			benchmarkPattern = "abc" // 5 hex chars for reasonable benchmark
 		}
 
 		// Validate hex characters
 		if !isValidHex(benchmarkPattern) {
 			fmt.Println("❌ Error: Benchmark pattern contains invalid hex characters")
 			os.Exit(1)
+		}
+
+		// Validate and set thread count
+		if threads < 0 {
+			fmt.Println("❌ Error: Number of threads cannot be negative")
+			os.Exit(1)
+		}
+
+		if threads == 0 {
+			threads = detectCPUCount()
+			fmt.Printf("🔧 Auto-detected %d CPU cores, using %d threads\n", threads, threads)
+		} else {
+			fmt.Printf("🔧 Using %d threads as specified\n", threads)
+		}
+
+		// Validate thread count doesn't exceed reasonable limits
+		maxThreads := detectCPUCount() * 2 // Allow up to 2x CPU cores
+		if threads > maxThreads {
+			fmt.Printf("⚠️  Warning: Using %d threads on %d CPU cores may not be optimal\n", threads, detectCPUCount())
 		}
 
 		runBenchmark(benchmarkAttempts, benchmarkPattern, checksum)
