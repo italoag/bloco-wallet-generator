@@ -288,9 +288,11 @@ Adicionei testes completos para todas as novas funcionalidades:
 - ✅ Benchmarks de performance
 
 ### Testes Pendentes
-- 🚧 `TestBenchmarkCommand` (multi-threaded)
-- 🚧 Testes de integração para componentes paralelos
-- 🚧 Testes de memória para object pools
+- 🚧 Testes unitários para componentes paralelos
+- 🚧 Testes de integração multi-thread
+- 🚧 Testes de performance e benchmarks
+- 🚧 Testes de otimização de memória e garbage collection
+- 🚧 Testes de integração e compatibilidade
 
 ## 🚀 Como Usar as Novas Funcionalidades
 
@@ -344,9 +346,10 @@ A aplicação Go agora possui **todas as funcionalidades estatísticas** do cód
 - **Memory**: Otimizado com object pools
 
 ### **Próximos Passos**
-- 🚧 **Benchmark Command**: Atualizar comando benchmark para suportar paralelização
-- 🚧 **CLI Thread Control**: Implementar validação avançada para flag --threads
-- 🚧 **Testes Unitários**: Completar testes para componentes paralelos
-- 🚧 **Otimização de Memória**: Melhorar gerenciamento de memória e garbage collection
+- 🚧 **Testes Unitários**: Implementar testes para componentes paralelos
+- 🚧 **Testes de Integração**: Criar testes end-to-end para geração paralela
+- 🚧 **Testes de Performance**: Adicionar benchmarks comparativos
+- 🚧 **Otimização de Memória**: Configurar pools com tamanhos adequados
+- 🚧 **Testes de Compatibilidade**: Verificar compatibilidade com diferentes padrões
 
 A conversão mantém **100% de compatibilidade funcional** com o sistema original, mas oferece **performance 8x superior** através de paralelização multi-thread e uma **experiência de usuário aprimorada** através da interface CLI otimizada.

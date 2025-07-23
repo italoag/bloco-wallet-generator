@@ -77,10 +77,11 @@ Most requirements specified in the requirements document have been successfully 
 
 A few tasks are still in progress:
 
-1. 🚧 Update benchmark command to fully support multi-threading
-2. 🚧 Implement additional CLI validation for thread control
-3. 🚧 Complete comprehensive test suite for parallel components
-4. 🚧 Optimize memory management and garbage collection further
+1. 🚧 Create tests unitários for componentes paralelos
+2. 🚧 Implement testes de integração multi-thread
+3. 🚧 Add testes de performance e benchmarks
+4. 🚧 Optimize gerenciamento de memória e garbage collection
+5. 🚧 Finalize integração e testes de compatibilidade
 
 ## Future Improvements
 

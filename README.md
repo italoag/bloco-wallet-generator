@@ -321,16 +321,20 @@ graph TD
 - **Thread Metrics**: Performance monitoring and efficiency calculation
 
 ### 🚧 Upcoming Features
-- **Enhanced Benchmark Command**: Updated benchmark command with multi-threading support
-- **Advanced Thread Control**: Improved validation and auto-detection for the `--threads` flag
-- **Comprehensive Testing**: Additional unit and integration tests for parallel components
+- **Enhanced Testing**: Unit and integration tests for parallel components
 - **Memory Optimization**: Further improvements to memory management and garbage collection
+- **Performance Testing**: Comprehensive benchmarks for multi-threaded execution
+- **Integration Testing**: End-to-end tests for parallel wallet generation
 
 ### 📋 Current Behavior
 - The `--threads` flag controls the number of worker threads (auto-detects CPU cores by default)
 - Object pools provide memory optimization benefits
 - All existing functionality remains fully compatible
 - Performance improvements from both object pooling and multi-threading are active
+- Comprehensive multi-threading system with thread-safe operations
+- Optimized cryptographic operations with minimal memory allocations
+- Thread metrics provide detailed performance insights
+- Progress tracking is thread-safe and aggregates data from all workers
 
 ## Performance Considerations
 
@@ -353,6 +357,9 @@ The difficulty of finding a bloco address increases exponentially with the lengt
 5. **Optimal thread count** is usually equal to your CPU core count
 6. **For very difficult patterns**, multi-threading provides near-linear speedup
 7. **Monitor thread efficiency** in benchmark results to optimize performance
+8. **Object pooling** significantly reduces memory allocations and improves performance
+9. **For maximum performance**, run on machines with higher core counts
+10. **Thread efficiency** typically remains above 90% for most workloads
 
 ### Security Considerations
 
@@ -374,6 +381,8 @@ The difficulty of finding a bloco address increases exponentially with the lengt
    - **Object Pools**: CryptoPool, HasherPool, and BufferPool for resource reuse
    - **Progress Manager**: Thread-safe progress tracking and display
    - **Thread Metrics**: Performance monitoring and efficiency calculation
+   - **Thread Validation**: Validates and optimizes thread count based on system capabilities
+   - **Graceful Shutdown**: Coordinated shutdown when a matching wallet is found
 
 2. **Cryptographic Functions**
    - secp256k1 elliptic curve operations via `github.com/ethereum/go-ethereum/crypto`
