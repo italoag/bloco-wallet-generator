@@ -63,10 +63,10 @@
   - _Requirements: 5.3, 6.1, 6.2_
 
 - [x] 11. Implementar controle de threads via CLI
-  - Validar se a implementação anterior funcionanda adequadamente
-  - Adicionar validação para flag --threads
-  - Implementar auto-detecção de CPUs quando threads=0
-  - Adicionar mensagens de erro para valores inválidos
+  - ✅ Validar se a implementação anterior funcionanda adequadamente
+  - ✅ Adicionar validação para flag --threads
+  - ✅ Implementar auto-detecção de CPUs quando threads=0
+  - ✅ Adicionar mensagens de erro para valores inválidos
   - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
 - [ ] 12. Criar testes unitários para componentes paralelos
@@ -95,7 +95,7 @@
 
 - [ ] 16. Finalizar integração e testes de compatibilidade
   - Verificar que todas as flags e comandos existentes funcionam
-  - Implementar todos os testes unitários necessários para validar a aplicação
+  - Implementar todos os testes unitários ausentes, necessários para validar a aplicação
   - Testar compatibilidade com diferentes padrões de entrada
   - Validar que formato de saída permanece inalterado
   - _Requirements: 6.1, 6.2, 6.3, 6.4_
