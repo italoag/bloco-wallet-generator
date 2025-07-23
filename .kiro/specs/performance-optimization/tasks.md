@@ -1,18 +1,19 @@
 # Implementation Plan
 
-- [ ] 1. Implementar estruturas básicas para paralelização
-  - Criar tipos WorkerPool, Worker, WorkItem e WorkResult
-  - Implementar detecção automática do número de CPUs disponíveis
-  - Adicionar flag --threads para controle manual de threads
+- [x] 1. Implementar estruturas básicas para paralelização
+  - ✅ Criar tipos WorkerPool, Worker, WorkItem e WorkResult
+  - ✅ Implementar detecção automática do número de CPUs disponíveis (detectCPUCount)
+  - ✅ Adicionar flag --threads para controle manual de threads
+  - ✅ Adicionar imports necessários (runtime, sync)
   - _Requirements: 1.1, 7.1, 7.2_
 
-- [ ] 2. Criar sistema de object pooling para otimizações criptográficas
-  - Implementar CryptoPool com pools para chaves privadas e públicas
-  - Criar HasherPool para reutilização de instâncias Keccak256
-  - Implementar BufferPool para buffers de bytes e strings
+- [x] 2. Criar sistema de object pooling para otimizações criptográficas
+  - ✅ Implementar CryptoPool com pools para chaves privadas e públicas
+  - ✅ Criar HasherPool para reutilização de instâncias Keccak256
+  - ✅ Implementar BufferPool para buffers de bytes e strings
   - _Requirements: 3.1, 3.2, 4.1_
 
-- [ ] 3. Implementar Worker individual com otimizações locais
+- [x] 3. Implementar Worker individual com otimizações locais
   - Criar estrutura Worker com recursos criptográficos otimizados
   - Implementar loop de geração de carteiras otimizado por worker
   - Adicionar coleta de estatísticas locais por worker
@@ -37,10 +38,10 @@
   - Implementar fallback para single-thread se necessário
   - _Requirements: 6.1, 6.2, 6.3_
 
-- [ ] 7. Otimizar operações criptográficas no hot path
-  - Refatorar privateToAddress para usar object pools
-  - Otimizar operações de string em isValidBlocoAddress
-  - Minimizar alocações de memória em operações de hash
+- [x] 7. Otimizar operações criptográficas no hot path
+  - ✅ Refatorar privateToAddress para usar object pools
+  - ✅ Otimizar operações de string em isValidBlocoAddress
+  - ✅ Minimizar alocações de memória em operações de hash
   - _Requirements: 3.1, 3.2, 4.2, 4.3_
 
 - [ ] 8. Implementar sistema de progresso thread-safe
@@ -61,15 +62,15 @@
   - Implementar métricas de escalabilidade
   - _Requirements: 5.3, 6.1, 6.2_
 
-- [ ] 11. Implementar controle de threads via CLI
-  - Adicionar validação para flag --threads
-  - Implementar auto-detecção de CPUs quando threads=0
-  - Adicionar mensagens de erro para valores inválidos
+- [x] 11. Implementar controle de threads via CLI
+  - ✅ Adicionar validação para flag --threads
+  - ✅ Implementar auto-detecção de CPUs quando threads=0
+  - ✅ Adicionar mensagens de erro para valores inválidos
   - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
 - [ ] 12. Criar testes unitários para componentes paralelos
   - Escrever testes para WorkerPool e Worker
-  - Criar testes para object pools (CryptoPool, HasherPool, BufferPool)
+  - ✅ Criar testes para object pools (CryptoPool, HasherPool, BufferPool)
   - Implementar testes de thread safety para StatsManager
   - _Requirements: 2.1, 2.2, 3.1, 4.1_
 
@@ -93,6 +94,7 @@
 
 - [ ] 16. Finalizar integração e testes de compatibilidade
   - Verificar que todas as flags e comandos existentes funcionam
+  - Implementar todos os testes unitários necessários para validar a aplicação
   - Testar compatibilidade com diferentes padrões de entrada
   - Validar que formato de saída permanece inalterado
   - _Requirements: 6.1, 6.2, 6.3, 6.4_

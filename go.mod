@@ -1,4 +1,4 @@
-module bloco-wallet
+module bloco-eth
 
 go 1.24.5
 

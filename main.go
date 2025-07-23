@@ -5,12 +5,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"log"
 	"math"
 	"math/big"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -56,12 +59,280 @@ type BenchmarkResult struct {
 	DurationSamples []time.Duration
 }
 
+// WorkItem represents a work unit for parallel processing
+type WorkItem struct {
+	Prefix     string
+	Suffix     string
+	IsChecksum bool
+	BatchSize  int
+}
+
+// WorkResult represents the result from a worker
+type WorkResult struct {
+	Wallet   *Wallet
+	Attempts int64
+	WorkerID int
+	Found    bool
+	Error    error
+}
+
+// WorkerStats holds statistics for individual workers
+type WorkerStats struct {
+	WorkerID   int
+	Attempts   int64
+	Speed      float64
+	LastUpdate time.Time
+}
+
+// Worker represents an individual worker thread
+type Worker struct {
+	id           int
+	workChan     chan WorkItem
+	resultChan   chan WorkResult
+	statsChan    chan WorkerStats
+	shutdownChan chan struct{}
+	localStats   WorkerStats
+}
+
+// WorkerPool manages multiple workers for parallel processing
+type WorkerPool struct {
+	numWorkers   int
+	workers      []*Worker
+	workChan     chan WorkItem
+	resultChan   chan WorkResult
+	statsChan    chan WorkerStats
+	shutdownChan chan struct{}
+	wg           sync.WaitGroup
+}
+
+// CryptoPool provides object pooling for cryptographic operations
+type CryptoPool struct {
+	privateKeyPool sync.Pool
+	publicKeyPool  sync.Pool
+	bigIntPool     sync.Pool
+	ecdsaKeyPool   sync.Pool
+}
+
+// HasherPool provides object pooling for Keccak256 hash instances
+type HasherPool struct {
+	keccakPool sync.Pool
+}
+
+// BufferPool provides object pooling for byte and string buffers
+type BufferPool struct {
+	byteBufferPool    sync.Pool
+	stringBuilderPool sync.Pool
+	hexBufferPool     sync.Pool
+}
+
 const (
 	// Step defines how many attempts before showing progress
 	Step = 500
 	// ProgressUpdateInterval defines how often to update progress display
 	ProgressUpdateInterval = time.Millisecond * 500
 )
+
+// Global object pools for performance optimization
+var (
+	globalCryptoPool *CryptoPool
+	globalHasherPool *HasherPool
+	globalBufferPool *BufferPool
+)
+
+// detectCPUCount returns the number of available CPU cores
+func detectCPUCount() int {
+	return runtime.NumCPU()
+}
+
+// NewCryptoPool creates a new CryptoPool with initialized pools
+func NewCryptoPool() *CryptoPool {
+	return &CryptoPool{
+		privateKeyPool: sync.Pool{
+			New: func() interface{} {
+				return make([]byte, 32)
+			},
+		},
+		publicKeyPool: sync.Pool{
+			New: func() interface{} {
+				return make([]byte, 64)
+			},
+		},
+		bigIntPool: sync.Pool{
+			New: func() interface{} {
+				return new(big.Int)
+			},
+		},
+		ecdsaKeyPool: sync.Pool{
+			New: func() interface{} {
+				return &ecdsa.PrivateKey{
+					PublicKey: ecdsa.PublicKey{
+						Curve: crypto.S256(),
+					},
+				}
+			},
+		},
+	}
+}
+
+// GetPrivateKeyBuffer gets a private key buffer from the pool
+func (cp *CryptoPool) GetPrivateKeyBuffer() []byte {
+	return cp.privateKeyPool.Get().([]byte)
+}
+
+// PutPrivateKeyBuffer returns a private key buffer to the pool
+func (cp *CryptoPool) PutPrivateKeyBuffer(buf []byte) {
+	// Clear the buffer for security
+	for i := range buf {
+		buf[i] = 0
+	}
+	cp.privateKeyPool.Put(buf)
+}
+
+// GetPublicKeyBuffer gets a public key buffer from the pool
+func (cp *CryptoPool) GetPublicKeyBuffer() []byte {
+	return cp.publicKeyPool.Get().([]byte)
+}
+
+// PutPublicKeyBuffer returns a public key buffer to the pool
+func (cp *CryptoPool) PutPublicKeyBuffer(buf []byte) {
+	// Clear the buffer for security
+	for i := range buf {
+		buf[i] = 0
+	}
+	cp.publicKeyPool.Put(buf)
+}
+
+// GetBigInt gets a big.Int from the pool
+func (cp *CryptoPool) GetBigInt() *big.Int {
+	bigInt := cp.bigIntPool.Get().(*big.Int)
+	bigInt.SetInt64(0) // Reset to zero
+	return bigInt
+}
+
+// PutBigInt returns a big.Int to the pool
+func (cp *CryptoPool) PutBigInt(bigInt *big.Int) {
+	bigInt.SetInt64(0) // Clear for security
+	cp.bigIntPool.Put(bigInt)
+}
+
+// GetECDSAKey gets an ECDSA private key from the pool
+func (cp *CryptoPool) GetECDSAKey() *ecdsa.PrivateKey {
+	key := cp.ecdsaKeyPool.Get().(*ecdsa.PrivateKey)
+	// Reset the key
+	key.D = nil
+	key.PublicKey.X = nil
+	key.PublicKey.Y = nil
+	return key
+}
+
+// PutECDSAKey returns an ECDSA private key to the pool
+func (cp *CryptoPool) PutECDSAKey(key *ecdsa.PrivateKey) {
+	// Clear sensitive data
+	if key.D != nil {
+		key.D.SetInt64(0)
+	}
+	if key.PublicKey.X != nil {
+		key.PublicKey.X.SetInt64(0)
+	}
+	if key.PublicKey.Y != nil {
+		key.PublicKey.Y.SetInt64(0)
+	}
+	cp.ecdsaKeyPool.Put(key)
+}
+
+// NewHasherPool creates a new HasherPool with initialized Keccak256 pool
+func NewHasherPool() *HasherPool {
+	return &HasherPool{
+		keccakPool: sync.Pool{
+			New: func() interface{} {
+				return sha3.NewLegacyKeccak256()
+			},
+		},
+	}
+}
+
+// GetKeccak gets a Keccak256 hasher from the pool
+func (hp *HasherPool) GetKeccak() hash.Hash {
+	hasher := hp.keccakPool.Get().(hash.Hash)
+	hasher.Reset() // Reset the hasher state
+	return hasher
+}
+
+// PutKeccak returns a Keccak256 hasher to the pool
+func (hp *HasherPool) PutKeccak(hasher hash.Hash) {
+	hasher.Reset() // Clear any remaining state
+	hp.keccakPool.Put(hasher)
+}
+
+// NewBufferPool creates a new BufferPool with initialized buffer pools
+func NewBufferPool() *BufferPool {
+	return &BufferPool{
+		byteBufferPool: sync.Pool{
+			New: func() interface{} {
+				return make([]byte, 0, 64) // Pre-allocate capacity for typical use
+			},
+		},
+		stringBuilderPool: sync.Pool{
+			New: func() interface{} {
+				return &strings.Builder{}
+			},
+		},
+		hexBufferPool: sync.Pool{
+			New: func() interface{} {
+				return make([]byte, 64) // For hex encoding/decoding
+			},
+		},
+	}
+}
+
+// GetByteBuffer gets a byte buffer from the pool
+func (bp *BufferPool) GetByteBuffer() []byte {
+	buf := bp.byteBufferPool.Get().([]byte)
+	return buf[:0] // Reset length but keep capacity
+}
+
+// PutByteBuffer returns a byte buffer to the pool
+func (bp *BufferPool) PutByteBuffer(buf []byte) {
+	// Clear the buffer for security
+	for i := range buf {
+		buf[i] = 0
+	}
+	bp.byteBufferPool.Put(buf[:0])
+}
+
+// GetStringBuilder gets a string builder from the pool
+func (bp *BufferPool) GetStringBuilder() *strings.Builder {
+	sb := bp.stringBuilderPool.Get().(*strings.Builder)
+	sb.Reset() // Clear any existing content
+	return sb
+}
+
+// PutStringBuilder returns a string builder to the pool
+func (bp *BufferPool) PutStringBuilder(sb *strings.Builder) {
+	sb.Reset() // Clear content
+	bp.stringBuilderPool.Put(sb)
+}
+
+// GetHexBuffer gets a hex buffer from the pool
+func (bp *BufferPool) GetHexBuffer() []byte {
+	return bp.hexBufferPool.Get().([]byte)
+}
+
+// PutHexBuffer returns a hex buffer to the pool
+func (bp *BufferPool) PutHexBuffer(buf []byte) {
+	// Clear the buffer for security
+	for i := range buf {
+		buf[i] = 0
+	}
+	bp.hexBufferPool.Put(buf)
+}
+
+// initializePools initializes the global object pools
+func initializePools() {
+	globalCryptoPool = NewCryptoPool()
+	globalHasherPool = NewHasherPool()
+	globalBufferPool = NewBufferPool()
+}
 
 // computeDifficulty calculates the difficulty of finding a bloco address
 func computeDifficulty(prefix, suffix string, isChecksum bool) float64 {
@@ -238,14 +509,22 @@ func (s *Statistics) displayProgress() {
 	}
 }
 func privateToAddress(privateKey []byte) string {
+	// Get objects from pools
+	privateKeyInt := globalCryptoPool.GetBigInt()
+	privateKeyECDSA := globalCryptoPool.GetECDSAKey()
+	hasher := globalHasherPool.GetKeccak()
+
+	defer func() {
+		// Return objects to pools
+		globalCryptoPool.PutBigInt(privateKeyInt)
+		globalCryptoPool.PutECDSAKey(privateKeyECDSA)
+		globalHasherPool.PutKeccak(hasher)
+	}()
+
 	// Convert private key bytes to ECDSA private key
-	privateKeyInt := new(big.Int).SetBytes(privateKey)
-	privateKeyECDSA := &ecdsa.PrivateKey{
-		PublicKey: ecdsa.PublicKey{
-			Curve: crypto.S256(),
-		},
-		D: privateKeyInt,
-	}
+	privateKeyInt.SetBytes(privateKey)
+	privateKeyECDSA.D = privateKeyInt
+	privateKeyECDSA.PublicKey.Curve = crypto.S256()
 
 	// Calculate public key coordinates
 	privateKeyECDSA.PublicKey.X, privateKeyECDSA.PublicKey.Y = crypto.S256().ScalarBaseMult(privateKey)
@@ -253,8 +532,7 @@ func privateToAddress(privateKey []byte) string {
 	// Get uncompressed public key bytes (without 0x04 prefix)
 	publicKeyBytes := crypto.FromECDSAPub(&privateKeyECDSA.PublicKey)[1:]
 
-	// Calculate Keccak256 hash
-	hasher := sha3.NewLegacyKeccak256()
+	// Calculate Keccak256 hash using pooled hasher
 	hasher.Write(publicKeyBytes)
 	hash := hasher.Sum(nil)
 
@@ -265,8 +543,11 @@ func privateToAddress(privateKey []byte) string {
 
 // getRandomWallet generates a random wallet with private key and address
 func getRandomWallet() (*Wallet, error) {
+	// Get private key buffer from pool
+	privateKey := globalCryptoPool.GetPrivateKeyBuffer()
+	defer globalCryptoPool.PutPrivateKeyBuffer(privateKey)
+
 	// Generate 32 random bytes for private key
-	privateKey := make([]byte, 32)
 	_, err := rand.Read(privateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate random bytes: %v", err)
@@ -286,10 +567,25 @@ func getRandomWallet() (*Wallet, error) {
 
 // isValidChecksum validates the checksum of an Ethereum address
 func isValidChecksum(address, prefix, suffix string) bool {
+	// Get hasher and string builder from pools
+	hasher := globalHasherPool.GetKeccak()
+	sb := globalBufferPool.GetStringBuilder()
+
+	defer func() {
+		globalHasherPool.PutKeccak(hasher)
+		globalBufferPool.PutStringBuilder(sb)
+	}()
+
 	// Calculate Keccak256 hash of the address
-	hasher := sha3.NewLegacyKeccak256()
 	hasher.Write([]byte(address))
-	hash := hex.EncodeToString(hasher.Sum(nil))
+	hashBytes := hasher.Sum(nil)
+
+	// Convert hash to hex string using string builder for efficiency
+	for _, b := range hashBytes {
+		sb.WriteByte("0123456789abcdef"[b>>4])
+		sb.WriteByte("0123456789abcdef"[b&0x0f])
+	}
+	hash := sb.String()
 
 	// Check prefix checksum
 	for i := 0; i < len(prefix); i++ {
@@ -321,20 +617,33 @@ func isValidChecksum(address, prefix, suffix string) bool {
 
 // isValidBlocoAddress checks if a wallet address matches the given constraints
 func isValidBlocoAddress(address, prefix, suffix string, isChecksum bool) bool {
-	if len(address) != 40 {
+	// Protect against index out of range
+	if len(prefix) > len(address) {
+		return false
+	}
+	if len(suffix) > len(address) {
 		return false
 	}
 
 	// Extract prefix and suffix from address
 	addressPrefix := address[:len(prefix)]
-	addressSuffix := address[40-len(suffix):]
+	addressSuffix := ""
+	if len(suffix) > 0 {
+		addressSuffix = address[len(address)-len(suffix):]
+	}
 
 	if !isChecksum {
-		return strings.EqualFold(prefix, addressPrefix) && strings.EqualFold(suffix, addressSuffix)
+		// For non-checksum validation, just compare case-insensitively
+		prefixMatch := len(prefix) == 0 || strings.EqualFold(prefix, addressPrefix)
+		suffixMatch := len(suffix) == 0 || strings.EqualFold(suffix, addressSuffix)
+		return prefixMatch && suffixMatch
 	}
 
 	// For checksum validation, first check if lowercase versions match
-	if !strings.EqualFold(prefix, addressPrefix) || !strings.EqualFold(suffix, addressSuffix) {
+	prefixMatch := len(prefix) == 0 || strings.EqualFold(prefix, addressPrefix)
+	suffixMatch := len(suffix) == 0 || strings.EqualFold(suffix, addressSuffix)
+
+	if !prefixMatch || !suffixMatch {
 		return false
 	}
 
@@ -343,21 +652,38 @@ func isValidBlocoAddress(address, prefix, suffix string, isChecksum bool) bool {
 
 // toChecksumAddress converts an address to checksum format
 func toChecksumAddress(address string) string {
-	// Calculate Keccak256 hash of the address
-	hasher := sha3.NewLegacyKeccak256()
-	hasher.Write([]byte(address))
-	hash := hex.EncodeToString(hasher.Sum(nil))
+	// Get hasher and string builders from pools
+	hasher := globalHasherPool.GetKeccak()
+	hashSB := globalBufferPool.GetStringBuilder()
+	resultSB := globalBufferPool.GetStringBuilder()
 
-	result := ""
+	defer func() {
+		globalHasherPool.PutKeccak(hasher)
+		globalBufferPool.PutStringBuilder(hashSB)
+		globalBufferPool.PutStringBuilder(resultSB)
+	}()
+
+	// Calculate Keccak256 hash of the address
+	hasher.Write([]byte(address))
+	hashBytes := hasher.Sum(nil)
+
+	// Convert hash to hex string using string builder for efficiency
+	for _, b := range hashBytes {
+		hashSB.WriteByte("0123456789abcdef"[b>>4])
+		hashSB.WriteByte("0123456789abcdef"[b&0x0f])
+	}
+	hash := hashSB.String()
+
+	// Build result using string builder for efficiency
 	for i, char := range address {
 		hashChar, _ := strconv.ParseInt(string(hash[i]), 16, 64)
 		if hashChar >= 8 {
-			result += strings.ToUpper(string(char))
+			resultSB.WriteString(strings.ToUpper(string(char)))
 		} else {
-			result += string(char)
+			resultSB.WriteRune(char)
 		}
 	}
-	return result
+	return resultSB.String()
 }
 
 // generateBlocoWallet generates a wallet that matches the given constraints with statistics
@@ -571,6 +897,7 @@ var (
 	count        int
 	checksum     bool
 	showProgress bool
+	threads      int
 	// Benchmark specific flags
 	benchmarkAttempts int64
 	benchmarkPattern  string
@@ -586,8 +913,8 @@ This command generates addresses continuously and measures performance metrics
 including average speed, speed range, and consistency.
 
 Examples:
-  bloco-wallet benchmark --attempts 10000 --pattern "fffff"
-  bloco-wallet benchmark --attempts 50000 --pattern "abc" --checksum`,
+  bloco-eth benchmark --attempts 10000 --pattern "fffff"
+  bloco-eth benchmark --attempts 50000 --pattern "abc" --checksum`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if benchmarkPattern == "" {
 			// Use default pattern if none specified
@@ -614,8 +941,8 @@ a bloco address with the specified pattern.
 This includes difficulty calculation, probability analysis, and time estimates.
 
 Examples:
-  bloco-wallet stats --prefix abc --suffix 123
-  bloco-wallet stats --prefix DeAdBeEf --checksum`,
+  bloco-eth stats --prefix abc --suffix 123
+  bloco-eth stats --prefix DeAdBeEf --checksum`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if prefix == "" && suffix == "" {
 			fmt.Println("❌ Error: At least one of --prefix or --suffix must be specified")
@@ -686,7 +1013,7 @@ Examples:
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "bloco-wallet",
+	Use:   "bloco-eth",
 	Short: "Generate Ethereum bloco wallets with custom prefix and suffix",
 	Long: `A high-performance CLI tool to generate Ethereum bloco wallets with custom 
 prefix and suffix patterns.
@@ -696,12 +1023,12 @@ and/or ends with a specific suffix. It supports checksum validation for more sec
 bloco addresses and provides detailed statistics and progress information.
 
 Examples:
-  bloco-wallet --prefix abc --suffix 123 --count 5
-  bloco-wallet --prefix deadbeef --checksum --count 1 --progress
-  bloco-wallet --suffix coffee --count 10
+  bloco-eth --prefix abc --suffix 123 --count 5
+  bloco-eth --prefix deadbeef --checksum --count 1 --progress
+  bloco-eth --suffix coffee --count 10
   
-Use 'bloco-wallet benchmark' to test performance
-Use 'bloco-wallet stats' to analyze pattern difficulty`,
+Use 'bloco-eth benchmark' to test performance
+Use 'bloco-eth stats' to analyze pattern difficulty`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Validate inputs
 		if prefix == "" && suffix == "" {
@@ -713,6 +1040,25 @@ Use 'bloco-wallet stats' to analyze pattern difficulty`,
 		if count <= 0 {
 			fmt.Println("❌ Error: Count must be greater than 0")
 			os.Exit(1)
+		}
+
+		// Validate and set thread count
+		if threads < 0 {
+			fmt.Println("❌ Error: Number of threads cannot be negative")
+			os.Exit(1)
+		}
+
+		if threads == 0 {
+			threads = detectCPUCount()
+			fmt.Printf("🔧 Auto-detected %d CPU cores, using %d threads\n", threads, threads)
+		} else {
+			fmt.Printf("🔧 Using %d threads as specified\n", threads)
+		}
+
+		// Validate thread count doesn't exceed reasonable limits
+		maxThreads := detectCPUCount() * 2 // Allow up to 2x CPU cores
+		if threads > maxThreads {
+			fmt.Printf("⚠️  Warning: Using %d threads on %d CPU cores may not be optimal\n", threads, detectCPUCount())
 		}
 
 		// Validate hex characters for prefix and suffix
@@ -735,7 +1081,7 @@ Use 'bloco-wallet stats' to analyze pattern difficulty`,
 		if difficulty > 1000000 && !showProgress {
 			fmt.Println("⚠️  Warning: This pattern may take a long time to generate.")
 			fmt.Println("💡 Consider using --progress flag to monitor generation progress")
-			fmt.Println("💡 Use 'bloco-wallet stats --prefix", prefix, "--suffix", suffix, "' to see difficulty analysis")
+			fmt.Println("💡 Use 'bloco-eth stats --prefix", prefix, "--suffix", suffix, "' to see difficulty analysis")
 			fmt.Println()
 		}
 
@@ -755,6 +1101,7 @@ func init() {
 	rootCmd.Flags().IntVarP(&count, "count", "c", 1, "Number of bloco wallets to generate")
 	rootCmd.Flags().BoolVar(&checksum, "checksum", false, "Enable EIP-55 checksum validation (case-sensitive)")
 	rootCmd.Flags().BoolVar(&showProgress, "progress", false, "Show detailed progress during generation")
+	rootCmd.Flags().IntVarP(&threads, "threads", "t", 0, "Number of threads to use (0 = auto-detect all CPUs)")
 
 	// Define flags for benchmark command
 	benchmarkCmd.Flags().Int64VarP(&benchmarkAttempts, "attempts", "a", 10000, "Number of attempts for benchmark")
@@ -768,6 +1115,9 @@ func init() {
 }
 
 func main() {
+	// Initialize object pools for performance optimization
+	initializePools()
+
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
