@@ -5,7 +5,7 @@ inclusion: always
 # Bloco Wallet Generator
 
 ## Product Overview
-A high-performance CLI tool for generating Ethereum "bloco" wallets with custom prefixes and suffixes. The tool creates vanity Ethereum addresses matching specific hex patterns at the beginning (prefix) and/or end (suffix) of addresses.
+A high-performance CLI tool for generating Ethereum "bloco" wallets with custom prefixes and suffixes. The tool creates Ethereum addresses matching specific hex patterns at the beginning (prefix) and/or end (suffix) of addresses.
 
 ## Core Features
 - **Pattern Matching**: Generate addresses with custom prefix/suffix combinations
