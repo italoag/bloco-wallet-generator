@@ -1182,7 +1182,7 @@ Examples:
 	Run: func(cmd *cobra.Command, args []string) {
 		if benchmarkPattern == "" {
 			// Use default pattern if none specified
-			benchmarkPattern = "abc" // 5 hex chars for reasonable benchmark
+			benchmarkPattern = "abc" // 3 hex chars for reasonable benchmark
 		}
 
 		// Validate hex characters
