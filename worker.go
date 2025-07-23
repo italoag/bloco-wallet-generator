@@ -5,19 +5,21 @@ import (
 	"encoding/hex"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
 // NewWorker creates a new worker with the given ID and channels
-func NewWorker(id int, workChan chan WorkItem, resultChan chan WorkResult, statsChan chan WorkerStats, shutdownChan chan struct{}) *Worker {
+func NewWorker(id int, workChan chan WorkItem, resultChan chan WorkResult, statsChan chan WorkerStats, shutdownChan chan struct{}, wg *sync.WaitGroup) *Worker {
 	return &Worker{
 		id:           id,
 		workChan:     workChan,
 		resultChan:   resultChan,
 		statsChan:    statsChan,
 		shutdownChan: shutdownChan,
+		wg:           wg,
 		localStats: WorkerStats{
 			WorkerID:   id,
 			Attempts:   0,
@@ -41,9 +43,23 @@ func (w *Worker) Start() {
 
 	// Process work items until shutdown
 	go func() {
+		// This will be called when the goroutine exits
+		// It signals to the worker pool that this worker has finished
+		defer func() {
+			// Signal that this worker has finished
+			if w.wg != nil {
+				w.wg.Done()
+			}
+		}()
+
 		for {
 			select {
-			case workItem := <-w.workChan:
+			case workItem, ok := <-w.workChan:
+				if !ok {
+					// Work channel closed, exit
+					return
+				}
+
 				// Process the work item
 				result := w.processWorkItem(workItem, cryptoPool, hasherPool, bufferPool)
 
@@ -58,7 +74,7 @@ func (w *Worker) Start() {
 					w.localStats.Speed = float64(attempts) / elapsed.Seconds()
 					w.localStats.LastUpdate = now
 
-					// Send stats update
+					// Send stats update (non-blocking)
 					select {
 					case w.statsChan <- w.localStats:
 						// Stats sent successfully
@@ -69,9 +85,24 @@ func (w *Worker) Start() {
 					lastStatsUpdate = now
 				}
 
-				// Send result if we found a match
+				// Send result (always try to send, even if not found for stats purposes)
 				if result.Found {
-					w.resultChan <- result
+					// This is a critical result, so we'll block until we can send it
+					select {
+					case w.resultChan <- result:
+						// Result sent successfully
+					case <-w.shutdownChan:
+						// Shutdown signal received, exit
+						return
+					}
+				} else {
+					// For non-matching results, use non-blocking send
+					select {
+					case w.resultChan <- result:
+						// Result sent successfully
+					default:
+						// Channel is full, skip this update
+					}
 				}
 
 			case <-w.shutdownChan:
@@ -83,7 +114,7 @@ func (w *Worker) Start() {
 				}
 				w.localStats.LastUpdate = time.Now()
 
-				// Try to send final stats
+				// Try to send final stats (non-blocking)
 				select {
 				case w.statsChan <- w.localStats:
 					// Stats sent successfully

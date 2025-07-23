@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"sync"
 	"time"
 )
@@ -122,6 +123,30 @@ func (sm *StatsManager) GetWorkerStats() map[int]WorkerStats {
 	return statsCopy
 }
 
+// GetThreadEfficiency returns the efficiency of thread utilization (0-1)
+func (sm *StatsManager) GetThreadEfficiency() float64 {
+	metrics := sm.GetMetrics()
+	return metrics.ThreadEfficiency
+}
+
+// GetSpeedupVsSingleThread returns the actual speedup compared to estimated single-thread performance
+func (sm *StatsManager) GetSpeedupVsSingleThread() float64 {
+	metrics := sm.GetMetrics()
+	return metrics.SpeedupVsSingleThread
+}
+
+// GetThreadBalanceScore returns a score indicating how evenly work is distributed (0-1)
+func (sm *StatsManager) GetThreadBalanceScore() float64 {
+	metrics := sm.GetMetrics()
+	return metrics.ThreadBalanceScore
+}
+
+// GetEstimatedSingleThreadSpeed returns the estimated speed of a single thread
+func (sm *StatsManager) GetEstimatedSingleThreadSpeed() float64 {
+	metrics := sm.GetMetrics()
+	return metrics.EstimatedSingleThreadSpeed
+}
+
 // GetMetrics returns a snapshot of all current metrics
 func (sm *StatsManager) GetMetrics() PerformanceMetrics {
 	sm.mu.RLock()
@@ -138,26 +163,71 @@ func (sm *StatsManager) GetMetrics() PerformanceMetrics {
 		}
 	}
 
-	// Calculate efficiency ratio (compared to theoretical linear scaling)
-	var efficiencyRatio float64 = 0
+	// Get worker count
 	workerCount := len(sm.workerStats)
+
+	// Calculate estimated single-thread speed
+	var estimatedSingleThreadSpeed float64 = 0
 	if workerCount > 0 && sm.avgSpeed > 0 {
 		// Estimate single-thread speed by dividing average by worker count
 		// This is an approximation since we don't have actual single-thread measurements
-		estimatedSingleThreadSpeed := sm.avgSpeed / float64(workerCount)
-		if estimatedSingleThreadSpeed > 0 {
-			efficiencyRatio = sm.totalSpeed / (estimatedSingleThreadSpeed * float64(workerCount))
+		estimatedSingleThreadSpeed = sm.avgSpeed / float64(workerCount)
+	}
+
+	// Calculate efficiency ratio (compared to theoretical linear scaling)
+	var efficiencyRatio float64 = 0
+	if workerCount > 0 && estimatedSingleThreadSpeed > 0 {
+		efficiencyRatio = sm.totalSpeed / (estimatedSingleThreadSpeed * float64(workerCount))
+	}
+
+	// Calculate speedup vs single-thread
+	var speedupVsSingleThread float64 = 0
+	if estimatedSingleThreadSpeed > 0 {
+		speedupVsSingleThread = sm.totalSpeed / estimatedSingleThreadSpeed
+	}
+
+	// Calculate thread balance score (how evenly work is distributed)
+	var threadBalanceScore float64 = 1.0 // Default to perfect balance
+	if workerCount > 1 && sm.totalSpeed > 0 {
+		// Calculate standard deviation of thread speeds
+		var sumSquaredDiff float64 = 0
+		meanSpeed := sm.totalSpeed / float64(workerCount)
+
+		for _, stats := range sm.workerStats {
+			diff := stats.Speed - meanSpeed
+			sumSquaredDiff += diff * diff
+		}
+
+		// Calculate coefficient of variation (normalized standard deviation)
+		stdDev := math.Sqrt(sumSquaredDiff / float64(workerCount))
+		if meanSpeed > 0 {
+			coeffVar := stdDev / meanSpeed
+			// Convert to a 0-1 score where 1 is perfect balance
+			threadBalanceScore = 1.0 - math.Min(coeffVar, 1.0)
 		}
 	}
 
+	// Estimate CPU utilization based on thread efficiency
+	// This is a rough approximation without actual CPU profiling
+	var cpuUtilization float64 = 0
+	if workerCount > 0 {
+		// Base utilization on efficiency ratio, but cap at 1.0 (100%)
+		cpuUtilization = math.Min(efficiencyRatio, 1.0)
+	}
+
 	return PerformanceMetrics{
-		ThreadUtilization: threadUtil,
-		TotalThroughput:   sm.totalSpeed,
-		PerThreadSpeed:    sm.getPerThreadSpeed(),
-		EfficiencyRatio:   efficiencyRatio,
-		TotalAttempts:     sm.totalAttempts,
-		ElapsedTime:       time.Since(sm.startTime),
-		WorkerCount:       workerCount,
+		ThreadUtilization:          threadUtil,
+		TotalThroughput:            sm.totalSpeed,
+		PerThreadSpeed:             sm.getPerThreadSpeed(),
+		EfficiencyRatio:            efficiencyRatio,
+		TotalAttempts:              sm.totalAttempts,
+		ElapsedTime:                time.Since(sm.startTime),
+		WorkerCount:                workerCount,
+		ThreadEfficiency:           efficiencyRatio,
+		CPUUtilization:             cpuUtilization,
+		SpeedupVsSingleThread:      speedupVsSingleThread,
+		ThreadBalanceScore:         threadBalanceScore,
+		EstimatedSingleThreadSpeed: estimatedSingleThreadSpeed,
 	}
 }
 
@@ -193,4 +263,11 @@ type PerformanceMetrics struct {
 	TotalAttempts     int64           // Total attempts across all workers
 	ElapsedTime       time.Duration   // Time elapsed since start
 	WorkerCount       int             // Number of active workers
+
+	// Enhanced multi-thread metrics
+	ThreadEfficiency           float64 // Actual speedup vs ideal linear speedup (0-1)
+	CPUUtilization             float64 // Estimated CPU utilization across all threads (0-1)
+	SpeedupVsSingleThread      float64 // Actual speedup compared to single-thread performance
+	ThreadBalanceScore         float64 // Score indicating how evenly work is distributed (0-1)
+	EstimatedSingleThreadSpeed float64 // Estimated speed of a single thread
 }

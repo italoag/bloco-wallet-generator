@@ -44,25 +44,26 @@
   - ✅ Minimizar alocações de memória em operações de hash
   - _Requirements: 3.1, 3.2, 4.2, 4.3_
 
-- [ ] 8. Implementar sistema de progresso thread-safe
-  - Modificar displayProgress para agregar dados de múltiplas threads
-  - Criar sistema de atualização de progresso sem race conditions
-  - Manter formato de exibição existente
+- [x] 8. Implementar sistema de progresso thread-safe
+  - ✅ Modificar displayProgress para agregar dados de múltiplas threads
+  - ✅ Criar sistema de atualização de progresso sem race conditions
+  - ✅ Manter formato de exibição existente
   - _Requirements: 2.4, 6.3, 5.3_
 
-- [ ] 9. Adicionar métricas de performance multi-thread
-  - Implementar coleta de métricas por thread (utilização, throughput)
-  - Criar cálculo de eficiência de paralelização
-  - Adicionar estatísticas de speedup vs single-thread
+- [x] 9. Adicionar métricas de performance multi-thread
+  - ✅ Implementar coleta de métricas por thread (utilização, throughput)
+  - ✅ Criar cálculo de eficiência de paralelização
+  - ✅ Adicionar estatísticas de speedup vs single-thread
   - _Requirements: 5.1, 5.2, 5.4_
 
-- [ ] 10. Atualizar comando benchmark para suportar paralelização
-  - Modificar runBenchmark para usar múltiplas threads
-  - Adicionar comparação single-thread vs multi-thread
-  - Implementar métricas de escalabilidade
+- [x] 10. Atualizar comando benchmark para suportar paralelização
+  - ✅ Modificar runBenchmark para usar múltiplas threads
+  - ✅ Adicionar comparação single-thread vs multi-thread
+  - ✅ Implementar métricas de escalabilidade
   - _Requirements: 5.3, 6.1, 6.2_
 
-- [ ] 11. Implementar controle de threads via CLI
+- [x] 11. Implementar controle de threads via CLI
+  - Validar se a implementação anterior funcionanda adequadamente
   - Adicionar validação para flag --threads
   - Implementar auto-detecção de CPUs quando threads=0
   - Adicionar mensagens de erro para valores inválidos

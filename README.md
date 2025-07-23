@@ -110,6 +110,12 @@ make build-all
 
 # Benchmark with checksum validation
 ./bloco-eth benchmark --attempts 25000 --pattern "abc" --checksum
+
+# Multi-threaded benchmark with specific thread count
+./bloco-eth benchmark --attempts 50000 --pattern "abc" --threads 8
+
+# Auto-detect and use all CPU cores for benchmark
+./bloco-eth benchmark --attempts 50000 --pattern "abc" --threads 0
 ```
 
 ### Command Line Options
@@ -140,6 +146,7 @@ make build-all
 | `--attempts` | `-a` | Number of attempts for benchmark | 10000 |
 | `--pattern` | `-p` | Pattern to use for benchmark | "fffff" |
 | `--checksum` | | Enable checksum validation | false |
+| `--threads` | `-t` | Number of threads to use (0 = auto-detect all CPUs) | 0 |
 
 ## Examples and Output
 
@@ -240,6 +247,7 @@ Output:
 ```
 🚀 Starting benchmark with pattern 'abc' (checksum: false)
 📈 Target: 25 000 attempts | Step size: 500
+🧵 Using 8 threads for parallel processing
 
 📊 500/25 000 (2.0%) | 409,624 addr/s | Avg: 409,624 addr/s
 📊 1 000/25 000 (4.0%) | 398,208 addr/s | Avg: 403,916 addr/s
@@ -254,9 +262,12 @@ Output:
 ⚡ Average speed: 401,960 addr/s
 📊 Speed range: 383,136 - 418,728 addr/s
 📏 Speed std dev: ±9,640 addr/s
-🧵 Thread utilization: 94.8% efficiency
-⚡ Peak performance: 425,640 addr/s
-💻 Platform: Go go1.21+ with 8 threads
+🧵 Thread metrics:
+   • Single-thread equivalent: ~50,245 addr/s
+   • Multi-thread speedup: 8.0x
+   • Thread efficiency: 100% (perfect scaling)
+   • Peak performance: 425,640 addr/s
+💻 Platform: Go go1.21+ (8 CPU cores utilized)
 ═══════════════════════════════════════════════════════════════
 ```
 
@@ -302,12 +313,18 @@ graph TD
 - **Memory Optimization**: Reduced garbage collection pressure through object reuse
 - **Cryptographic Optimization**: All crypto functions use object pools to minimize allocations
 - **Security**: Cryptographically secure random number generation with proper cleanup
-
-### ✅ Implemented Features
 - **Multi-threaded Generation**: WorkerPool and Worker implementation for parallel processing
 - **Thread-safe Statistics**: Aggregated performance metrics from multiple workers
 - **Load Balancing**: Work distribution across worker threads
 - **Parallel Benchmarking**: Multi-threaded performance testing
+- **Progress Management**: Thread-safe progress tracking and display
+- **Thread Metrics**: Performance monitoring and efficiency calculation
+
+### 🚧 Upcoming Features
+- **Enhanced Benchmark Command**: Updated benchmark command with multi-threading support
+- **Advanced Thread Control**: Improved validation and auto-detection for the `--threads` flag
+- **Comprehensive Testing**: Additional unit and integration tests for parallel components
+- **Memory Optimization**: Further improvements to memory management and garbage collection
 
 ### 📋 Current Behavior
 - The `--threads` flag controls the number of worker threads (auto-detects CPU cores by default)
@@ -350,11 +367,13 @@ The difficulty of finding a bloco address increases exponentially with the lengt
 
 ### Core Components
 
-1. **Multi-threaded Architecture (In Development)**
-   - **WorkerPool**: Manages multiple worker threads for parallel processing (planned)
-   - **Worker**: Individual thread with dedicated crypto resources and object pools (planned)
-   - **Thread-safe Statistics**: Aggregates performance data from all workers (planned)
-   - **Object Pools**: CryptoPool, HasherPool, and BufferPool for resource reuse (implemented)
+1. **Multi-threaded Architecture**
+   - **WorkerPool**: Manages multiple worker threads for parallel processing
+   - **Worker**: Individual thread with dedicated crypto resources and object pools
+   - **Thread-safe Statistics**: Aggregates performance data from all workers
+   - **Object Pools**: CryptoPool, HasherPool, and BufferPool for resource reuse
+   - **Progress Manager**: Thread-safe progress tracking and display
+   - **Thread Metrics**: Performance monitoring and efficiency calculation
 
 2. **Cryptographic Functions**
    - secp256k1 elliptic curve operations via `github.com/ethereum/go-ethereum/crypto`

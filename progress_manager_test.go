@@ -8,118 +8,165 @@ import (
 
 // TestProgressManagerThreadSafety tests that the ProgressManager is thread-safe
 func TestProgressManagerThreadSafety(t *testing.T) {
-	// Create a statistics manager
-	statsManager := NewStatsManager()
+	// Initialize global pools for testing
+	initializePools()
 
-	// Create statistics
-	stats := newStatistics("a", "b", false)
+	// Create a stats manager and statistics object
+	statsManager := NewStatsManager()
+	stats := newStatistics("abc", "def", true)
 
 	// Create a progress manager
 	progressManager := NewProgressManager(stats, statsManager)
 
-	// Use a shorter update interval for testing
-	progressManager.UpdateInterval(10 * time.Millisecond)
-
 	// Start the progress manager
 	progressManager.Start()
+	defer progressManager.Stop()
 
-	// Create multiple goroutines to update stats simultaneously
+	// Create multiple goroutines to simulate concurrent worker updates
 	var wg sync.WaitGroup
 	workerCount := 10
 	updatesPerWorker := 100
 
+	// Create a channel to simulate worker stats updates
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
 
-			// Create worker stats
-			workerStats := WorkerStats{
-				WorkerID:   workerID,
-				Attempts:   0,
-				Speed:      float64(workerID * 1000),
-				LastUpdate: time.Now(),
-			}
-
-			// Update stats multiple times
+			// Simulate worker stats updates
 			for j := 0; j < updatesPerWorker; j++ {
-				workerStats.Attempts += 1000
-				statsManager.UpdateWorkerStats(workerStats)
+				statsManager.UpdateWorkerStats(WorkerStats{
+					WorkerID:   workerID,
+					Attempts:   int64(j + 1),
+					Speed:      float64(j + 1),
+					LastUpdate: time.Now(),
+				})
+
+				// Small sleep to simulate real work
 				time.Sleep(time.Millisecond)
 			}
 		}(i)
 	}
 
-	// Wait for all goroutines to complete
+	// Wait for all workers to complete
 	wg.Wait()
 
-	// Stop the progress manager
-	progressManager.Stop()
+	// Verify that the progress manager has aggregated all worker stats
+	aggregatedStats := progressManager.GetAggregatedStats()
 
-	// Verify that the total attempts match what we expect
-	expectedAttempts := int64(workerCount * updatesPerWorker * 1000)
-	actualAttempts := statsManager.GetTotalAttempts()
-
-	if actualAttempts != expectedAttempts {
-		t.Errorf("Expected %d attempts, got %d", expectedAttempts, actualAttempts)
+	// Check that we have the expected number of workers
+	if statsManager.GetWorkerCount() != workerCount {
+		t.Errorf("Expected %d workers, got %d", workerCount, statsManager.GetWorkerCount())
 	}
-}
 
-// TestProgressManagerForceUpdate tests that ForceUpdate works correctly
-func TestProgressManagerForceUpdate(t *testing.T) {
-	// Create a statistics manager
-	statsManager := NewStatsManager()
-
-	// Create statistics
-	stats := newStatistics("a", "b", false)
-
-	// Create a progress manager with a very long update interval
-	progressManager := NewProgressManager(stats, statsManager)
-	progressManager.UpdateInterval(1 * time.Hour) // Long enough that it won't trigger during test
-
-	// Start the progress manager
-	progressManager.Start()
-
-	// Update stats
-	workerStats := WorkerStats{
-		WorkerID:   1,
-		Attempts:   1000,
-		Speed:      1000,
-		LastUpdate: time.Now(),
+	// Check that the total attempts is as expected
+	expectedAttempts := int64(workerCount * updatesPerWorker)
+	if statsManager.GetTotalAttempts() != expectedAttempts {
+		t.Errorf("Expected %d total attempts, got %d", expectedAttempts, statsManager.GetTotalAttempts())
 	}
-	statsManager.UpdateWorkerStats(workerStats)
 
-	// Force an update
+	// Force an update and check that the progress manager has the latest data
 	progressManager.ForceUpdate()
+	aggregatedStats = progressManager.GetAggregatedStats()
 
-	// Verify that stats were updated
-	if stats.CurrentAttempts != 1000 {
-		t.Errorf("Expected 1000 attempts, got %d", stats.CurrentAttempts)
+	if aggregatedStats.TotalAttempts != expectedAttempts {
+		t.Errorf("Expected %d total attempts in aggregated stats, got %d", expectedAttempts, aggregatedStats.TotalAttempts)
 	}
 
-	// Stop the progress manager
-	progressManager.Stop()
+	if aggregatedStats.ActiveWorkers != workerCount {
+		t.Errorf("Expected %d active workers in aggregated stats, got %d", workerCount, aggregatedStats.ActiveWorkers)
+	}
 }
 
-// TestProgressManagerMultipleStartStop tests that the progress manager can be started and stopped multiple times
-func TestProgressManagerMultipleStartStop(t *testing.T) {
-	// Create a statistics manager
-	statsManager := NewStatsManager()
+// TestProgressManagerDisplayFormat tests that the progress display format is maintained
+func TestProgressManagerDisplayFormat(t *testing.T) {
+	// This is a visual test that can't be automatically verified
+	// But we can at least ensure the code runs without panicking
 
-	// Create statistics
-	stats := newStatistics("a", "b", false)
+	// Initialize global pools for testing
+	initializePools()
+
+	// Create a stats manager and statistics object
+	statsManager := NewStatsManager()
+	stats := newStatistics("abc", "def", true)
 
 	// Create a progress manager
 	progressManager := NewProgressManager(stats, statsManager)
 
-	// Start and stop multiple times
-	for i := 0; i < 5; i++ {
-		progressManager.Start()
-		time.Sleep(10 * time.Millisecond)
-		progressManager.Stop()
+	// Update some worker stats
+	statsManager.UpdateWorkerStats(WorkerStats{
+		WorkerID:   1,
+		Attempts:   1000,
+		Speed:      5000,
+		LastUpdate: time.Now(),
+	})
+
+	statsManager.UpdateWorkerStats(WorkerStats{
+		WorkerID:   2,
+		Attempts:   2000,
+		Speed:      6000,
+		LastUpdate: time.Now(),
+	})
+
+	// Force an update to aggregate the stats
+	progressManager.ForceUpdate()
+
+	// Get the aggregated stats
+	aggregatedStats := progressManager.GetAggregatedStats()
+
+	// Verify that the aggregated stats are correct
+	if aggregatedStats.TotalAttempts != 3000 {
+		t.Errorf("Expected 3000 total attempts, got %d", aggregatedStats.TotalAttempts)
 	}
 
-	// Start again to ensure it still works
+	if aggregatedStats.TotalSpeed != 11000 {
+		t.Errorf("Expected 11000 total speed, got %f", aggregatedStats.TotalSpeed)
+	}
+
+	if aggregatedStats.ActiveWorkers != 2 {
+		t.Errorf("Expected 2 active workers, got %d", aggregatedStats.ActiveWorkers)
+	}
+}
+
+// TestProgressManagerShutdown tests that the progress manager can be shut down gracefully
+func TestProgressManagerShutdown(t *testing.T) {
+	// Initialize global pools for testing
+	initializePools()
+
+	// Create a stats manager and statistics object
+	statsManager := NewStatsManager()
+	stats := newStatistics("abc", "def", true)
+
+	// Create a progress manager
+	progressManager := NewProgressManager(stats, statsManager)
+
+	// Start the progress manager
 	progressManager.Start()
+
+	// Verify that the progress manager is active
+	if !progressManager.IsActive() {
+		t.Error("Expected progress manager to be active")
+	}
+
+	// Stop the progress manager
+	progressManager.Stop()
+
+	// Give it a moment to shut down
+	time.Sleep(10 * time.Millisecond)
+
+	// Verify that the progress manager is no longer active
+	if progressManager.IsActive() {
+		t.Error("Expected progress manager to be inactive after stopping")
+	}
+
+	// Start it again to ensure it can be restarted
+	progressManager.Start()
+
+	// Verify that the progress manager is active again
+	if !progressManager.IsActive() {
+		t.Error("Expected progress manager to be active after restarting")
+	}
+
+	// Stop it again
 	progressManager.Stop()
 }

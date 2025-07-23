@@ -17,8 +17,9 @@ func TestNewWorker(t *testing.T) {
 	resultChan := make(chan WorkResult)
 	statsChan := make(chan WorkerStats)
 	shutdownChan := make(chan struct{})
+	var wg sync.WaitGroup
 
-	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan)
+	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan, &wg)
 
 	if worker == nil {
 		t.Fatal("NewWorker returned nil")
@@ -54,8 +55,9 @@ func TestWorkerProcessWorkItem(t *testing.T) {
 	resultChan := make(chan WorkResult)
 	statsChan := make(chan WorkerStats)
 	shutdownChan := make(chan struct{})
+	var wg sync.WaitGroup
 
-	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan)
+	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan, &wg)
 
 	// Create local pools for testing
 	cryptoPool := NewCryptoPool()
@@ -94,8 +96,9 @@ func TestWorkerStart(t *testing.T) {
 	resultChan := make(chan WorkResult)
 	statsChan := make(chan WorkerStats, 10) // Buffered to prevent blocking
 	shutdownChan := make(chan struct{})
+	var wg sync.WaitGroup
 
-	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan)
+	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan, &wg)
 
 	// Start the worker
 	worker.Start()
@@ -109,13 +112,13 @@ func TestWorkerStart(t *testing.T) {
 	}
 
 	// Use a WaitGroup to coordinate the test
-	var wg sync.WaitGroup
-	wg.Add(1)
+	var testWg sync.WaitGroup
+	testWg.Add(1)
 
 	// Start a goroutine to receive the result
 	var result WorkResult
 	go func() {
-		defer wg.Done()
+		defer testWg.Done()
 
 		// Send the work item
 		workChan <- workItem
@@ -130,7 +133,7 @@ func TestWorkerStart(t *testing.T) {
 	}()
 
 	// Wait for the goroutine to complete
-	wg.Wait()
+	testWg.Wait()
 
 	// Check if we got a result
 	if !result.Found {
@@ -161,8 +164,9 @@ func TestPrivateToAddressOptimized(t *testing.T) {
 	resultChan := make(chan WorkResult)
 	statsChan := make(chan WorkerStats)
 	shutdownChan := make(chan struct{})
+	var wg sync.WaitGroup
 
-	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan)
+	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan, &wg)
 
 	// Create local pools for testing
 	cryptoPool := NewCryptoPool()
@@ -198,8 +202,9 @@ func TestIsValidBlocoAddressOptimized(t *testing.T) {
 	resultChan := make(chan WorkResult)
 	statsChan := make(chan WorkerStats)
 	shutdownChan := make(chan struct{})
+	var wg sync.WaitGroup
 
-	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan)
+	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan, &wg)
 
 	// Create local pools for testing
 	hasherPool := NewHasherPool()
@@ -276,8 +281,9 @@ func BenchmarkWorkerPrivateToAddressOptimized(b *testing.B) {
 	resultChan := make(chan WorkResult)
 	statsChan := make(chan WorkerStats)
 	shutdownChan := make(chan struct{})
+	var wg sync.WaitGroup
 
-	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan)
+	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan, &wg)
 
 	// Create local pools for testing
 	cryptoPool := NewCryptoPool()
@@ -302,8 +308,9 @@ func BenchmarkWorkerIsValidBlocoAddressOptimized(b *testing.B) {
 	resultChan := make(chan WorkResult)
 	statsChan := make(chan WorkerStats)
 	shutdownChan := make(chan struct{})
+	var wg sync.WaitGroup
 
-	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan)
+	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan, &wg)
 
 	// Create local pools for testing
 	hasherPool := NewHasherPool()

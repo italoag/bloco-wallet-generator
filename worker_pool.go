@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sync"
 	"time"
 )
 
@@ -22,11 +23,14 @@ func NewWorkerPool(numWorkers int) *WorkerPool {
 
 // Start initializes and starts all workers in the pool
 func (wp *WorkerPool) Start() {
+	// Reset the WaitGroup in case this is a restart
+	wp.wg = sync.WaitGroup{}
 	wp.wg.Add(wp.numWorkers)
 
 	// Create and start workers
+	wp.workers = make([]*Worker, 0, wp.numWorkers)
 	for i := 0; i < wp.numWorkers; i++ {
-		worker := NewWorker(i, wp.workChan, wp.resultChan, wp.statsChan, wp.shutdownChan)
+		worker := NewWorker(i, wp.workChan, wp.resultChan, wp.statsChan, wp.shutdownChan, &wp.wg)
 		wp.workers = append(wp.workers, worker)
 		worker.Start()
 	}
@@ -71,11 +75,41 @@ func (wp *WorkerPool) CollectStats(statsManager *StatsManager) {
 
 // Shutdown gracefully shuts down all workers
 func (wp *WorkerPool) Shutdown() {
+	// Create a channel to signal when shutdown is complete
+	done := make(chan struct{})
+
 	// Signal all workers to shut down
 	close(wp.shutdownChan)
 
-	// Wait for all workers to finish
-	wp.wg.Wait()
+	// Start draining channels to prevent workers from blocking
+	go func() {
+		for {
+			select {
+			case <-wp.resultChan:
+				// Drain result channel
+			case <-wp.statsChan:
+				// Drain stats channel
+			case <-time.After(100 * time.Millisecond):
+				// If no messages for 100ms, assume channels are drained
+				return
+			}
+		}
+	}()
+
+	// Wait for all workers to finish with timeout
+	go func() {
+		wp.wg.Wait()
+		close(done)
+	}()
+
+	// Wait with timeout to prevent deadlock
+	select {
+	case <-done:
+		// Workers finished normally
+	case <-time.After(5 * time.Second):
+		// Timeout - some workers might be stuck
+		// We'll continue anyway
+	}
 }
 
 // GetNumWorkers returns the number of workers in the pool
@@ -105,32 +139,98 @@ func (wp *WorkerPool) GenerateWallet(prefix, suffix string, isChecksum bool, sta
 	// Calculate appropriate batch size based on difficulty
 	batchSize := calculateOptimalBatchSize(prefix, suffix, isChecksum)
 
+	// Channel to signal when a match is found
+	matchFound := make(chan struct{})
+	resultChan := make(chan WorkResult, wp.numWorkers)
+	var foundWallet *Wallet
+	var totalAttempts int64
+
 	// Start distributing work to workers
 	go func() {
-		for {
-			wp.DistributeWork(prefix, suffix, isChecksum, batchSize)
+		// Distribute initial work to all workers
+		wp.DistributeWork(prefix, suffix, isChecksum, batchSize)
 
-			// Check if we should stop
+		// Continue distributing work until a match is found or shutdown
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
 			select {
 			case <-wp.shutdownChan:
 				return
-			default:
-				// Continue distributing work
+			case <-matchFound:
+				return
+			case <-ticker.C:
+				// Check if we need to distribute more work
+				// Only distribute more work if the channel isn't full
+				if len(wp.workChan) < wp.numWorkers {
+					wp.DistributeWork(prefix, suffix, isChecksum, batchSize)
+				}
 			}
 		}
 	}()
 
-	// Wait for a result
-	result, found := wp.WaitForResult(24 * time.Hour) // Long timeout, effectively infinite
+	// Forward results from wp.resultChan to our local resultChan
+	go func() {
+		defer close(resultChan)
+		for {
+			select {
+			case <-wp.shutdownChan:
+				return
+			case <-matchFound:
+				return
+			case result, ok := <-wp.resultChan:
+				if !ok {
+					return
+				}
+				select {
+				case resultChan <- result:
+					// Result forwarded
+				case <-matchFound:
+					return
+				case <-wp.shutdownChan:
+					return
+				}
+			}
+		}
+	}()
+
+	// Result processing goroutine
+	go func() {
+		for {
+			select {
+			case <-wp.shutdownChan:
+				return
+			case result, ok := <-resultChan:
+				if !ok {
+					return
+				}
+
+				if result.Found {
+					foundWallet = result.Wallet
+					totalAttempts = statsManager.GetTotalAttempts()
+					// Signal that a match was found
+					close(matchFound)
+					return
+				}
+				// Continue processing non-matching results
+			}
+		}
+	}()
+
+	// Wait for a match to be found with timeout
+	select {
+	case <-matchFound:
+		// Match found, continue to shutdown
+	case <-time.After(24 * time.Hour):
+		// Timeout after 24 hours (should never happen in practice)
+		close(matchFound)
+	}
 
 	// Shutdown the worker pool
 	wp.Shutdown()
 
-	if found && result.Found {
-		return result.Wallet, statsManager.GetTotalAttempts()
-	}
-
-	return nil, statsManager.GetTotalAttempts()
+	return foundWallet, totalAttempts
 }
 
 // calculateOptimalBatchSize determines the best batch size based on pattern difficulty

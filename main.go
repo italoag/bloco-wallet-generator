@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -50,13 +51,22 @@ type Statistics struct {
 
 // BenchmarkResult holds benchmark statistics
 type BenchmarkResult struct {
-	TotalAttempts   int64
-	TotalDuration   time.Duration
-	AverageSpeed    float64
-	MinSpeed        float64
-	MaxSpeed        float64
-	SpeedSamples    []float64
-	DurationSamples []time.Duration
+	TotalAttempts         int64
+	TotalDuration         time.Duration
+	AverageSpeed          float64
+	MinSpeed              float64
+	MaxSpeed              float64
+	SpeedSamples          []float64
+	DurationSamples       []time.Duration
+	SingleThreadSpeed     float64 // Speed estimate for single-thread execution
+	ThreadCount           int     // Number of threads used
+	ScalabilityEfficiency float64 // Actual speedup / ideal speedup ratio
+
+	// Enhanced scalability metrics
+	ThreadBalanceScore    float64 // How evenly work is distributed (0-1)
+	ThreadUtilization     float64 // Average thread utilization (0-1)
+	SpeedupVsSingleThread float64 // Actual speedup compared to single-thread
+	AmdahlsLawLimit       float64 // Theoretical maximum speedup based on Amdahl's Law
 }
 
 // WorkItem represents a work unit for parallel processing
@@ -92,6 +102,7 @@ type Worker struct {
 	statsChan    chan WorkerStats
 	shutdownChan chan struct{}
 	localStats   WorkerStats
+	wg           *sync.WaitGroup // Reference to the worker pool's WaitGroup
 }
 
 // WorkerPool manages multiple workers for parallel processing
@@ -142,6 +153,42 @@ var (
 // detectCPUCount returns the number of available CPU cores
 func detectCPUCount() int {
 	return runtime.NumCPU()
+}
+
+// validateThreads validates the thread count and sets appropriate values
+// It handles auto-detection, validation of values, and provides user feedback
+func validateThreads() {
+	// Check for negative values
+	if threads < 0 {
+		fmt.Println("❌ Error: Number of threads cannot be negative")
+		fmt.Println("💡 Use --threads=0 for automatic detection")
+		os.Exit(1)
+	}
+
+	// Auto-detect when threads=0
+	if threads == 0 {
+		cpuCount := detectCPUCount()
+		threads = cpuCount
+		fmt.Printf("🔧 Auto-detected %d CPU cores, using %d threads\n", cpuCount, threads)
+	} else {
+		fmt.Printf("🔧 Using %d threads as specified\n", threads)
+	}
+
+	// Validate thread count doesn't exceed reasonable limits
+	cpuCount := detectCPUCount()
+	maxRecommendedThreads := cpuCount * 2 // Allow up to 2x CPU cores as reasonable maximum
+
+	if threads > maxRecommendedThreads {
+		fmt.Printf("⚠️  Warning: Using %d threads on %d CPU cores may not be optimal\n", threads, cpuCount)
+		fmt.Printf("💡 Recommended maximum is %d threads (2x CPU cores)\n", maxRecommendedThreads)
+	}
+
+	// Check for unreasonably high values that might cause system instability
+	if threads > 128 {
+		fmt.Println("❌ Error: Thread count is unreasonably high")
+		fmt.Printf("💡 Maximum allowed is 128 threads, you specified %d\n", threads)
+		os.Exit(1)
+	}
 }
 
 // NewCryptoPool creates a new CryptoPool with initialized pools
@@ -468,6 +515,15 @@ func (s *Statistics) update(attempts int64) {
 	}
 
 	s.LastUpdate = now
+}
+
+// updateFromAggregated updates statistics from aggregated multi-thread data
+func (s *Statistics) updateFromAggregated(aggregated AggregatedStats) {
+	s.CurrentAttempts = aggregated.TotalAttempts
+	s.Probability = aggregated.Probability
+	s.Speed = aggregated.TotalSpeed
+	s.EstimatedTime = aggregated.EstimatedTime
+	s.LastUpdate = aggregated.LastUpdate
 }
 
 // displayProgress shows a progress bar and statistics
@@ -830,6 +886,11 @@ func generateBlocoWallet(prefix, suffix string, isChecksum bool, showProgress bo
 		suf = strings.ToLower(suffix)
 	}
 
+	// For testing or simple cases, use single-threaded generation
+	if !showProgress || threads <= 1 {
+		return generateBlocoWalletSingleThread(pre, suf, isChecksum, showProgress)
+	}
+
 	// Initialize statistics
 	var stats *Statistics
 	if showProgress {
@@ -888,19 +949,192 @@ func generateBlocoWallet(prefix, suffix string, isChecksum bool, showProgress bo
 	}
 }
 
-// runBenchmark runs a performance benchmark
+// generateBlocoWalletSingleThread generates a wallet using a simple single-threaded approach
+func generateBlocoWalletSingleThread(prefix, suffix string, isChecksum bool, showProgress bool) *WalletResult {
+	var attempts int = 0
+	var stats *Statistics
+
+	if showProgress {
+		stats = newStatistics(prefix, suffix, isChecksum)
+		fmt.Printf("\n🎯 Generating bloco wallet with pattern: %s%s%s\n", prefix, strings.Repeat("*", 40-len(prefix)-len(suffix)), suffix)
+		fmt.Printf("📊 Difficulty: %s | 50%% probability: %s attempts\n\n",
+			formatNumber(int64(stats.Difficulty)),
+			formatNumber(stats.Probability50))
+	}
+
+	lastProgressUpdate := time.Now()
+
+	for {
+		attempts++
+
+		// Generate a random wallet
+		wallet, err := getRandomWallet()
+		if err != nil {
+			return &WalletResult{
+				Error:    fmt.Sprintf("Failed to generate wallet: %v", err),
+				Attempts: attempts,
+			}
+		}
+
+		// Check if the address matches our pattern
+		if isValidBlocoAddress(wallet.Address, prefix, suffix, isChecksum) {
+			// Found a match!
+			checksumAddress := "0x" + toChecksumAddress(wallet.Address)
+
+			if showProgress {
+				stats.update(int64(attempts))
+				stats.displayProgress()
+				fmt.Printf("\n✅ Success! Found matching address in %s attempts\n", formatNumber(int64(attempts)))
+			}
+
+			return &WalletResult{
+				Wallet: &Wallet{
+					Address: checksumAddress,
+					PrivKey: wallet.PrivKey,
+				},
+				Attempts: attempts,
+			}
+		}
+
+		// Update progress periodically
+		if showProgress && time.Since(lastProgressUpdate) >= ProgressUpdateInterval {
+			stats.update(int64(attempts))
+			stats.displayProgress()
+			lastProgressUpdate = time.Now()
+		}
+	}
+}
+
+// runQuickSingleThreadBenchmark runs a quick benchmark with a single thread to establish baseline performance
+func runQuickSingleThreadBenchmark(pattern string, isChecksum bool) float64 {
+	fmt.Printf("🔍 Running quick single-thread benchmark for baseline...\n")
+
+	// Save original thread count and temporarily set to 1
+	originalThreads := threads
+	threads = 1
+
+	// Create a worker pool with just one thread
+	workerPool := NewWorkerPool(1)
+
+	// Create a stats manager for thread-safe statistics collection
+	statsManager := NewStatsManager()
+
+	// Start the worker pool
+	workerPool.Start()
+
+	// Start collecting stats
+	workerPool.CollectStats(statsManager)
+
+	// Number of attempts for quick benchmark - enough to get a stable measurement
+	quickBenchmarkAttempts := int64(10000)
+
+	// Submit work
+	workerPool.Submit(WorkItem{
+		Prefix:     pattern,
+		Suffix:     "",
+		IsChecksum: isChecksum,
+		BatchSize:  int(quickBenchmarkAttempts),
+	})
+
+	// Wait for completion
+	startTime := time.Now()
+
+	// Wait for the benchmark to complete or timeout
+	timeout := time.After(15 * time.Second)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	// Track speed samples to get a more stable measurement
+	var speedSamples []float64
+	lastAttempts := int64(0)
+	lastTime := startTime
+
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now()
+			attempts := statsManager.GetTotalAttempts()
+
+			// Calculate speed for this sample
+			if attempts > lastAttempts {
+				sampleDuration := now.Sub(lastTime)
+				sampleAttempts := attempts - lastAttempts
+				sampleSpeed := float64(sampleAttempts) / sampleDuration.Seconds()
+
+				// Only add valid samples
+				if sampleSpeed > 0 {
+					speedSamples = append(speedSamples, sampleSpeed)
+				}
+
+				lastAttempts = attempts
+				lastTime = now
+			}
+
+			if attempts >= quickBenchmarkAttempts {
+				// Benchmark completed
+				duration := time.Since(startTime)
+				overallSpeed := float64(attempts) / duration.Seconds()
+
+				// Calculate median speed from samples for more stability
+				var medianSpeed float64
+				if len(speedSamples) > 0 {
+					// Sort samples and take median
+					sort.Float64s(speedSamples)
+					medianSpeed = speedSamples[len(speedSamples)/2]
+
+					// Use median if it's reasonable, otherwise use overall speed
+					if medianSpeed > 0 && medianSpeed < overallSpeed*2 {
+						overallSpeed = medianSpeed
+					}
+				}
+
+				// Shutdown the worker pool
+				workerPool.Shutdown()
+
+				// Restore original thread count
+				threads = originalThreads
+
+				fmt.Printf("✓ Single-thread baseline: %.0f addr/s\n", overallSpeed)
+				return overallSpeed
+			}
+		case <-timeout:
+			// Timeout after 15 seconds
+			attempts := statsManager.GetTotalAttempts()
+			duration := time.Since(startTime)
+			speed := float64(attempts) / duration.Seconds()
+
+			// Shutdown the worker pool
+			workerPool.Shutdown()
+
+			// Restore original thread count
+			threads = originalThreads
+
+			fmt.Printf("⚠️ Single-thread benchmark timed out, using estimate: %.0f addr/s\n", speed)
+			return speed
+		}
+	}
+}
+
+// runBenchmark runs a performance benchmark with multi-thread support and scalability analysis
 func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *BenchmarkResult {
 	if maxAttempts == 0 {
 		maxAttempts = 10000
 	}
 
-	fmt.Printf("🚀 Starting benchmark with pattern '%s' (checksum: %t)\n", pattern, isChecksum)
+	fmt.Printf("🚀 Starting multi-threaded benchmark with pattern '%s' (checksum: %t)\n", pattern, isChecksum)
 	fmt.Printf("📈 Target: %s attempts | Step size: %d\n", formatNumber(maxAttempts), Step)
-	fmt.Printf("🧵 Using %d worker threads\n\n", threads)
+
+	// First run a quick single-thread benchmark to establish baseline
+	singleThreadSpeed := runQuickSingleThreadBenchmark(pattern, isChecksum)
+
+	fmt.Printf("🧵 Using %d worker threads for multi-threaded benchmark\n", threads)
+	fmt.Printf("🔍 Single-thread baseline: %.0f addr/s\n\n", singleThreadSpeed)
 
 	result := &BenchmarkResult{
-		SpeedSamples:    make([]float64, 0),
-		DurationSamples: make([]time.Duration, 0),
+		SpeedSamples:      make([]float64, 0),
+		DurationSamples:   make([]time.Duration, 0),
+		SingleThreadSpeed: singleThreadSpeed,
+		ThreadCount:       threads,
 	}
 
 	// Create a worker pool with the specified number of threads
@@ -953,12 +1187,19 @@ func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *Benchmark
 						progress = 100
 					}
 
-					fmt.Printf("📊 %s/%s (%.1f%%) | %.0f addr/s | Avg: %.0f addr/s\n",
+					// Enhanced progress display with thread metrics
+					metrics := statsManager.GetMetrics()
+					threadEfficiency := metrics.ThreadEfficiency * 100
+					speedupVsSingleThread := metrics.SpeedupVsSingleThread
+
+					fmt.Printf("📊 %s/%s (%.1f%%) | %.0f addr/s | Avg: %.0f addr/s | Speedup: %.2fx | Efficiency: %.1f%%\n",
 						formatNumber(attempts),
 						formatNumber(maxAttempts),
 						progress,
 						stepSpeed,
-						float64(attempts)/time.Since(startTime).Seconds())
+						float64(attempts)/time.Since(startTime).Seconds(),
+						speedupVsSingleThread,
+						threadEfficiency)
 
 					lastStepTime = now
 					stepAttempts = 0
@@ -1078,6 +1319,36 @@ func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *Benchmark
 	result.TotalDuration = totalDuration
 	result.AverageSpeed = averageSpeed
 
+	// Calculate scalability metrics
+	speedup := averageSpeed / result.SingleThreadSpeed
+	idealSpeedup := float64(threads)
+	result.ScalabilityEfficiency = speedup / idealSpeedup
+
+	// Calculate Amdahl's Law limit
+	// Amdahl's Law: S(n) = 1 / ((1 - p) + p/n)
+	// where p is the proportion of parallelizable code and n is the number of threads
+	// We can estimate p based on observed speedup
+	var p float64 = 0.95 // Assume 95% of code is parallelizable by default
+	if threads > 1 && speedup > 1 {
+		// Solve for p: p = (speedup * n - n) / (speedup * (n - 1))
+		p = (speedup*float64(threads) - float64(threads)) / (speedup * (float64(threads) - 1))
+		// Clamp p to reasonable values (0.5 to 0.99)
+		if p < 0.5 {
+			p = 0.5
+		} else if p > 0.99 {
+			p = 0.99
+		}
+	}
+
+	// Calculate theoretical maximum speedup based on Amdahl's Law
+	amdahlsLawLimit := 1 / ((1 - p) + p/float64(threads))
+	result.AmdahlsLawLimit = amdahlsLawLimit
+
+	// Calculate additional metrics
+	result.ThreadBalanceScore = statsManager.GetThreadBalanceScore()
+	result.ThreadUtilization = statsManager.GetThreadEfficiency()
+	result.SpeedupVsSingleThread = speedup
+
 	// Display final results
 	fmt.Printf("\n🏁 Benchmark completed!\n")
 	fmt.Printf("═══════════════════════════════════════════════════════════════\n")
@@ -1104,13 +1375,59 @@ func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *Benchmark
 		fmt.Printf("📏 Speed std dev: ±%.0f addr/s\n", stdDev)
 	}
 
-	// Thread utilization statistics
+	// Enhanced multi-thread metrics
 	metrics := statsManager.GetMetrics()
-	fmt.Printf("🧵 Thread utilization: %.2f%% efficiency\n", metrics.EfficiencyRatio*100)
-	fmt.Printf("⚡ Peak performance: %.0f addr/s\n", statsManager.GetPeakSpeed())
+
+	// Thread utilization statistics
+	fmt.Printf("\n🧵 Multi-Thread Performance Analysis\n")
+	fmt.Printf("───────────────────────────────────────────────────────────────\n")
+	fmt.Printf("• Single-thread speed: %.0f addr/s\n", result.SingleThreadSpeed)
+	fmt.Printf("• Multi-thread speed: %.0f addr/s\n", averageSpeed)
+	fmt.Printf("• Actual speedup: %.2fx\n", speedup)
+	fmt.Printf("• Ideal speedup: %.0fx\n", idealSpeedup)
+	fmt.Printf("• Scalability efficiency: %.1f%%\n", result.ScalabilityEfficiency*100)
+	fmt.Printf("• Thread utilization: %.1f%%\n", metrics.ThreadEfficiency*100)
+	fmt.Printf("• Thread balance: %.1f%%\n", metrics.ThreadBalanceScore*100)
+	fmt.Printf("• Peak performance: %.0f addr/s\n", statsManager.GetPeakSpeed())
+
+	// Amdahl's Law analysis
+	fmt.Printf("\n📐 Scalability Analysis\n")
+	fmt.Printf("───────────────────────────────────────────────────────────────\n")
+	fmt.Printf("• Parallelizable code estimate: %.1f%%\n", p*100)
+	fmt.Printf("• Theoretical max speedup (Amdahl's Law): %.2fx\n", amdahlsLawLimit)
+	fmt.Printf("• Performance of theoretical max: %.1f%%\n", (speedup/amdahlsLawLimit)*100)
+
+	// Scalability projection
+	fmt.Printf("\n📈 Scalability Projection\n")
+	fmt.Printf("───────────────────────────────────────────────────────────────\n")
+	fmt.Printf("%-10s | %-15s | %-15s\n", "Threads", "Projected Speed", "Efficiency")
+	fmt.Printf("%-10s-+-%-15s-+-%-15s\n",
+		"----------", "---------------", "---------------")
+
+	// Project performance for different thread counts
+	currentThreads := threads
+	for t := 1; t <= currentThreads*2; t *= 2 {
+		if t == currentThreads {
+			// For current thread count, use actual measured speed
+			projectedSpeed := averageSpeed
+			efficiency := speedup / float64(t) * 100
+			fmt.Printf("%-10d | %-15.0f | %-14.1f%% (actual)\n",
+				t, projectedSpeed, efficiency)
+		} else {
+			// For other thread counts, use Amdahl's Law to project
+			projectedSpeedup := 1 / ((1 - p) + p/float64(t))
+			projectedSpeed := result.SingleThreadSpeed * projectedSpeedup
+			efficiency := projectedSpeedup / float64(t) * 100
+			fmt.Printf("%-10d | %-15.0f | %-14.1f%%\n",
+				t, projectedSpeed, efficiency)
+		}
+	}
+
+	// Display detailed thread metrics
+	DisplayThreadMetrics(statsManager)
 
 	// Hardware info
-	fmt.Printf("💻 Platform: Go %s with %d threads\n",
+	fmt.Printf("\n💻 Platform: Go %s with %d threads\n",
 		strings.TrimPrefix(fmt.Sprintf("%s", "go1.21+"), "go"),
 		threads)
 	fmt.Printf("═══════════════════════════════════════════════════════════════\n")
@@ -1165,6 +1482,7 @@ var (
 	// Benchmark specific flags
 	benchmarkAttempts int64
 	benchmarkPattern  string
+	compareThreads    bool
 )
 
 // Benchmark command
@@ -1174,11 +1492,14 @@ var benchmarkCmd = &cobra.Command{
 	Long: `Run a performance benchmark to test address generation speed.
 	
 This command generates addresses continuously and measures performance metrics
-including average speed, speed range, and consistency.
+including average speed, speed range, and consistency. It supports multi-threaded
+execution and provides detailed scalability metrics.
 
 Examples:
   bloco-eth benchmark --attempts 10000 --pattern "abc"
-  bloco-eth benchmark --attempts 50000 --pattern "abc" --checksum`,
+  bloco-eth benchmark --attempts 50000 --pattern "abc" --checksum
+  bloco-eth benchmark --attempts 20000 --pattern "abc" --threads 4
+  bloco-eth benchmark --attempts 10000 --pattern "abc" --compare-threads`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if benchmarkPattern == "" {
 			// Use default pattern if none specified
@@ -1192,17 +1513,7 @@ Examples:
 		}
 
 		// Validate and set thread count
-		if threads < 0 {
-			fmt.Println("❌ Error: Number of threads cannot be negative")
-			os.Exit(1)
-		}
-
-		if threads == 0 {
-			threads = detectCPUCount()
-			fmt.Printf("🔧 Auto-detected %d CPU cores, using %d threads\n", threads, threads)
-		} else {
-			fmt.Printf("🔧 Using %d threads as specified\n", threads)
-		}
+		validateThreads()
 
 		// Validate thread count doesn't exceed reasonable limits
 		maxThreads := detectCPUCount() * 2 // Allow up to 2x CPU cores
@@ -1210,7 +1521,149 @@ Examples:
 			fmt.Printf("⚠️  Warning: Using %d threads on %d CPU cores may not be optimal\n", threads, detectCPUCount())
 		}
 
-		runBenchmark(benchmarkAttempts, benchmarkPattern, checksum)
+		// Run the benchmark with the specified parameters
+		result := runBenchmark(benchmarkAttempts, benchmarkPattern, checksum)
+
+		// If compare-threads flag is set, run additional benchmarks with different thread counts
+		if compareThreads {
+			fmt.Printf("\n🔍 Running thread comparison benchmarks...\n")
+
+			// Save original thread count
+			originalThreads := threads
+
+			// Define thread counts to compare (1, 2, 4, 8, etc. up to original thread count)
+			threadCounts := []int{1}
+			for t := 2; t <= originalThreads; t *= 2 {
+				if t <= originalThreads {
+					threadCounts = append(threadCounts, t)
+				}
+			}
+
+			// Make sure the original thread count is included if not already
+			if threadCounts[len(threadCounts)-1] != originalThreads {
+				threadCounts = append(threadCounts, originalThreads)
+			}
+
+			// Run benchmarks with different thread counts
+			results := make(map[int]*BenchmarkResult)
+			results[originalThreads] = result // Store the original result
+
+			// Run benchmarks for other thread counts
+			for _, t := range threadCounts {
+				if t == originalThreads {
+					continue // Skip the original thread count as we already have it
+				}
+
+				fmt.Printf("\n📊 Benchmark with %d threads:\n", t)
+				threads = t
+				results[t] = runBenchmark(benchmarkAttempts/2, benchmarkPattern, checksum) // Use fewer attempts for comparison
+			}
+
+			// Display comparison results
+			fmt.Printf("\n🧵 Thread Scaling Comparison\n")
+			fmt.Printf("═══════════════════════════════════════════════════════════════\n")
+			fmt.Printf("%-10s | %-15s | %-15s | %-15s | %-15s\n",
+				"Threads", "Speed (addr/s)", "Speedup", "Efficiency", "Balance")
+			fmt.Printf("%-10s-+-%-15s-+-%-15s-+-%-15s-+-%-15s\n",
+				"----------", "---------------", "---------------", "---------------", "---------------")
+
+			// Use single thread as baseline
+			baseSpeed := results[1].AverageSpeed
+
+			// Print results in order of thread count
+			for _, t := range threadCounts {
+				r := results[t]
+				speedup := r.AverageSpeed / baseSpeed
+				efficiency := speedup / float64(t) * 100
+
+				fmt.Printf("%-10d | %-15.0f | %-15.2fx | %-14.1f%% | %-14.1f%%\n",
+					t, r.AverageSpeed, speedup, efficiency, r.ThreadBalanceScore*100)
+			}
+
+			// Calculate and display scalability metrics
+			fmt.Printf("\n📈 Scalability Analysis\n")
+			fmt.Printf("───────────────────────────────────────────────────────────────\n")
+
+			// Calculate scalability coefficient using Amdahl's Law
+			// S(n) = 1 / ((1 - p) + p/n)
+			// We can estimate p by fitting the curve to our measurements
+
+			// Use linear regression to estimate parallelizable portion (p)
+			var sumX, sumY, sumXY, sumX2 float64
+			var n float64
+
+			for _, t := range threadCounts {
+				if t == 1 {
+					continue // Skip single thread as it doesn't provide scaling info
+				}
+
+				x := 1.0 / float64(t)
+				y := 1.0 / (results[t].AverageSpeed / baseSpeed)
+
+				sumX += x
+				sumY += y
+				sumXY += x * y
+				sumX2 += x * x
+				n++
+			}
+
+			// Calculate regression coefficients
+			var p float64
+			if n > 1 {
+				slope := (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX)
+				intercept := (sumY - slope*sumX) / n
+				p = slope / (intercept + slope)
+
+				// Clamp p to reasonable values (0.5 to 0.99)
+				if p < 0.5 {
+					p = 0.5
+				} else if p > 0.99 {
+					p = 0.99
+				}
+
+				fmt.Printf("• Parallelizable code estimate: %.1f%%\n", p*100)
+				fmt.Printf("• Sequential code estimate: %.1f%%\n", (1-p)*100)
+
+				// Calculate theoretical maximum speedup with infinite cores
+				maxSpeedup := 1.0 / (1.0 - p)
+				fmt.Printf("• Theoretical maximum speedup (infinite cores): %.2fx\n", maxSpeedup)
+
+				// Calculate optimal thread count based on efficiency target
+				// Efficiency = S(n)/n = 1/(n*((1-p) + p/n))
+				// For 90% efficiency: n = 9*p/(1-p)
+				optimalThreads90 := 9.0 * p / (1.0 - p)
+				fmt.Printf("• Optimal thread count for 90%% efficiency: %.0f threads\n", math.Ceil(optimalThreads90))
+
+				// Project performance at higher thread counts
+				fmt.Printf("\n📊 Performance Projection\n")
+				fmt.Printf("%-10s | %-15s | %-15s | %-15s\n",
+					"Threads", "Projected Speed", "Speedup", "Efficiency")
+				fmt.Printf("%-10s-+-%-15s-+-%-15s-+-%-15s\n",
+					"----------", "---------------", "---------------", "---------------")
+
+				// Show projections for 2x, 4x, and 8x the current thread count
+				maxProjection := originalThreads * 8
+				if maxProjection > 128 {
+					maxProjection = 128 // Cap at reasonable value
+				}
+
+				for t := originalThreads * 2; t <= maxProjection; t *= 2 {
+					projectedSpeedup := 1.0 / ((1.0 - p) + p/float64(t))
+					projectedSpeed := baseSpeed * projectedSpeedup
+					efficiency := projectedSpeedup / float64(t) * 100
+
+					fmt.Printf("%-10d | %-15.0f | %-15.2fx | %-14.1f%%\n",
+						t, projectedSpeed, projectedSpeedup, efficiency)
+				}
+			} else {
+				fmt.Printf("• Insufficient data points to calculate scalability metrics\n")
+			}
+
+			fmt.Printf("═══════════════════════════════════════════════════════════════\n")
+
+			// Restore original thread count
+			threads = originalThreads
+		}
 	},
 }
 
@@ -1326,23 +1779,7 @@ Use 'bloco-eth stats' to analyze pattern difficulty`,
 		}
 
 		// Validate and set thread count
-		if threads < 0 {
-			fmt.Println("❌ Error: Number of threads cannot be negative")
-			os.Exit(1)
-		}
-
-		if threads == 0 {
-			threads = detectCPUCount()
-			fmt.Printf("🔧 Auto-detected %d CPU cores, using %d threads\n", threads, threads)
-		} else {
-			fmt.Printf("🔧 Using %d threads as specified\n", threads)
-		}
-
-		// Validate thread count doesn't exceed reasonable limits
-		maxThreads := detectCPUCount() * 2 // Allow up to 2x CPU cores
-		if threads > maxThreads {
-			fmt.Printf("⚠️  Warning: Using %d threads on %d CPU cores may not be optimal\n", threads, detectCPUCount())
-		}
+		validateThreads()
 
 		// Validate hex characters for prefix and suffix
 		if !isValidHex(prefix) || !isValidHex(suffix) {
@@ -1384,12 +1821,14 @@ func init() {
 	rootCmd.Flags().IntVarP(&count, "count", "c", 1, "Number of bloco wallets to generate")
 	rootCmd.Flags().BoolVar(&checksum, "checksum", false, "Enable EIP-55 checksum validation (case-sensitive)")
 	rootCmd.Flags().BoolVar(&showProgress, "progress", false, "Show detailed progress during generation")
-	rootCmd.Flags().IntVarP(&threads, "threads", "t", 0, "Number of threads to use (0 = auto-detect all CPUs)")
+	rootCmd.Flags().IntVarP(&threads, "threads", "t", 0, "Number of threads to use (0 = auto-detect, recommended max is 2x CPU cores)")
 
 	// Define flags for benchmark command
 	benchmarkCmd.Flags().Int64VarP(&benchmarkAttempts, "attempts", "a", 10000, "Number of attempts for benchmark")
-	benchmarkCmd.Flags().StringVarP(&benchmarkPattern, "pattern", "p", "", "Pattern to use for benchmark (default: 'fffff')")
+	benchmarkCmd.Flags().StringVarP(&benchmarkPattern, "pattern", "p", "", "Pattern to use for benchmark (default: 'abc')")
 	benchmarkCmd.Flags().BoolVar(&checksum, "checksum", false, "Enable checksum validation for benchmark")
+	benchmarkCmd.Flags().BoolVar(&compareThreads, "compare-threads", false, "Run additional benchmarks with different thread counts for comparison")
+	benchmarkCmd.Flags().IntVarP(&threads, "threads", "t", 0, "Number of threads to use (0 = auto-detect, recommended max is 2x CPU cores)")
 
 	// Define flags for stats command
 	statsCmd.Flags().StringVarP(&prefix, "prefix", "p", "", "Prefix for difficulty analysis")
