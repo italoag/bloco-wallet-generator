@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "name": "Docs Sync",
+  "description": "Listens to Go source files, configuration files, and build files for changes and automatically updates documentation in README.md or docs folder when source code is modified",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.go",
+      "go.mod",
+      "go.sum",
+      "Makefile",
+      "main.go",
+      "main_test.go"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "The source code in this Go project has been modified. Please review the changes and update the documentation accordingly. Update the README.md file to reflect any new features, API changes, or usage instructions. If there is a /docs folder, also update relevant documentation files there. Focus on keeping the documentation accurate and up-to-date with the current codebase."
+  }
+}
