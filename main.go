@@ -508,17 +508,43 @@ func (s *Statistics) displayProgress() {
 		fmt.Printf(" | ETA: %s", formatDuration(s.EstimatedTime))
 	}
 }
+
+// displayProgressParallel shows progress for parallel wallet generation
+func displayProgressParallel(stats *Statistics, statsManager *StatsManager, shutdownChan chan struct{}) {
+	for {
+		select {
+		case <-time.After(ProgressUpdateInterval):
+			// Get current stats from the stats manager
+			attempts := statsManager.GetTotalAttempts()
+
+			// Update statistics
+			stats.update(attempts)
+			stats.displayProgress()
+
+		case <-shutdownChan:
+			// Final update before exiting
+			attempts := statsManager.GetTotalAttempts()
+			stats.update(attempts)
+			stats.displayProgress()
+			return
+		}
+	}
+}
 func privateToAddress(privateKey []byte) string {
 	// Get objects from pools
 	privateKeyInt := globalCryptoPool.GetBigInt()
 	privateKeyECDSA := globalCryptoPool.GetECDSAKey()
 	hasher := globalHasherPool.GetKeccak()
+	publicKeyBytes := globalCryptoPool.GetPublicKeyBuffer()
+	hexBuffer := globalBufferPool.GetHexBuffer()
 
 	defer func() {
 		// Return objects to pools
 		globalCryptoPool.PutBigInt(privateKeyInt)
 		globalCryptoPool.PutECDSAKey(privateKeyECDSA)
 		globalHasherPool.PutKeccak(hasher)
+		globalCryptoPool.PutPublicKeyBuffer(publicKeyBytes)
+		globalBufferPool.PutHexBuffer(hexBuffer)
 	}()
 
 	// Convert private key bytes to ECDSA private key
@@ -530,15 +556,24 @@ func privateToAddress(privateKey []byte) string {
 	privateKeyECDSA.PublicKey.X, privateKeyECDSA.PublicKey.Y = crypto.S256().ScalarBaseMult(privateKey)
 
 	// Get uncompressed public key bytes (without 0x04 prefix)
-	publicKeyBytes := crypto.FromECDSAPub(&privateKeyECDSA.PublicKey)[1:]
+	// Using pre-allocated buffer instead of creating a new one
+	publicKeyBytes = publicKeyBytes[:0] // Reset but keep capacity
+
+	// Append X and Y coordinates
+	publicKeyBytes = append(publicKeyBytes, privateKeyECDSA.PublicKey.X.Bytes()...)
+	publicKeyBytes = append(publicKeyBytes, privateKeyECDSA.PublicKey.Y.Bytes()...)
 
 	// Calculate Keccak256 hash using pooled hasher
+	hasher.Reset()
 	hasher.Write(publicKeyBytes)
 	hash := hasher.Sum(nil)
 
 	// Take the last 20 bytes as the address
 	address := hash[len(hash)-20:]
-	return hex.EncodeToString(address)
+
+	// Use pre-allocated buffer for hex encoding
+	hex.Encode(hexBuffer, address)
+	return string(hexBuffer[:40])
 }
 
 // getRandomWallet generates a random wallet with private key and address
@@ -567,47 +602,112 @@ func getRandomWallet() (*Wallet, error) {
 
 // isValidChecksum validates the checksum of an Ethereum address
 func isValidChecksum(address, prefix, suffix string) bool {
-	// Get hasher and string builder from pools
+	// Get hasher, string builder, and byte buffer from pools
 	hasher := globalHasherPool.GetKeccak()
 	sb := globalBufferPool.GetStringBuilder()
+	addressBytes := globalBufferPool.GetByteBuffer()
 
 	defer func() {
 		globalHasherPool.PutKeccak(hasher)
 		globalBufferPool.PutStringBuilder(sb)
+		globalBufferPool.PutByteBuffer(addressBytes)
 	}()
 
-	// Calculate Keccak256 hash of the address
-	hasher.Write([]byte(address))
-	hashBytes := hasher.Sum(nil)
+	// Convert address to bytes without allocating a new slice
+	addressBytes = append(addressBytes, address...)
 
-	// Convert hash to hex string using string builder for efficiency
+	// Calculate Keccak256 hash of the address
+	hasher.Reset()
+	hasher.Write(addressBytes)
+
+	// Use a fixed-size array for hash bytes to avoid heap allocation
+	var hashBytes [32]byte
+	hasher.Sum(hashBytes[:0])
+
+	// Pre-allocate capacity in string builder
+	sb.Grow(64) // 32 bytes * 2 hex chars per byte
+
+	// Convert hash to hex string using string builder and lookup table for efficiency
+	const hexChars = "0123456789abcdef"
 	for _, b := range hashBytes {
-		sb.WriteByte("0123456789abcdef"[b>>4])
-		sb.WriteByte("0123456789abcdef"[b&0x0f])
+		sb.WriteByte(hexChars[b>>4])
+		sb.WriteByte(hexChars[b&0x0f])
 	}
+
+	// Get the hash string without allocating a new string
 	hash := sb.String()
 
-	// Check prefix checksum
+	// Fast path: if prefix and suffix are empty, return true
+	if len(prefix) == 0 && len(suffix) == 0 {
+		return true
+	}
+
+	// Check prefix checksum - avoid string allocations in the loop
 	for i := 0; i < len(prefix); i++ {
-		hashChar, _ := strconv.ParseInt(string(hash[i]), 16, 64)
-		expectedChar := string(address[i])
-		if hashChar >= 8 {
-			expectedChar = strings.ToUpper(expectedChar)
+		// Convert hex char to int directly without ParseInt
+		var hashChar int64
+		hexChar := hash[i]
+		if hexChar >= '0' && hexChar <= '9' {
+			hashChar = int64(hexChar - '0')
+		} else if hexChar >= 'a' && hexChar <= 'f' {
+			hashChar = int64(hexChar - 'a' + 10)
 		}
-		if string(prefix[i]) != expectedChar {
+
+		addrChar := address[i]
+		var expectedChar byte
+		if hashChar >= 8 {
+			// Convert to uppercase if needed
+			if addrChar >= 'a' && addrChar <= 'f' {
+				expectedChar = addrChar - 32 // 'a' to 'A' ASCII difference
+			} else {
+				expectedChar = addrChar
+			}
+		} else {
+			// Convert to lowercase if needed
+			if addrChar >= 'A' && addrChar <= 'F' {
+				expectedChar = addrChar + 32 // 'A' to 'a' ASCII difference
+			} else {
+				expectedChar = addrChar
+			}
+		}
+
+		if prefix[i] != expectedChar {
 			return false
 		}
 	}
 
-	// Check suffix checksum
+	// Check suffix checksum - avoid string allocations in the loop
 	for i := 0; i < len(suffix); i++ {
 		j := i + 40 - len(suffix)
-		hashChar, _ := strconv.ParseInt(string(hash[j]), 16, 64)
-		expectedChar := string(address[j])
-		if hashChar >= 8 {
-			expectedChar = strings.ToUpper(expectedChar)
+
+		// Convert hex char to int directly without ParseInt
+		var hashChar int64
+		hexChar := hash[j]
+		if hexChar >= '0' && hexChar <= '9' {
+			hashChar = int64(hexChar - '0')
+		} else if hexChar >= 'a' && hexChar <= 'f' {
+			hashChar = int64(hexChar - 'a' + 10)
 		}
-		if string(suffix[i]) != expectedChar {
+
+		addrChar := address[j]
+		var expectedChar byte
+		if hashChar >= 8 {
+			// Convert to uppercase if needed
+			if addrChar >= 'a' && addrChar <= 'f' {
+				expectedChar = addrChar - 32 // 'a' to 'A' ASCII difference
+			} else {
+				expectedChar = addrChar
+			}
+		} else {
+			// Convert to lowercase if needed
+			if addrChar >= 'A' && addrChar <= 'F' {
+				expectedChar = addrChar + 32 // 'A' to 'a' ASCII difference
+			} else {
+				expectedChar = addrChar
+			}
+		}
+
+		if suffix[i] != expectedChar {
 			return false
 		}
 	}
@@ -625,21 +725,30 @@ func isValidBlocoAddress(address, prefix, suffix string, isChecksum bool) bool {
 		return false
 	}
 
-	// Extract prefix and suffix from address
-	addressPrefix := address[:len(prefix)]
-	addressSuffix := ""
+	// Fast path: if both prefix and suffix are empty, return true immediately
+	if len(prefix) == 0 && len(suffix) == 0 {
+		return true
+	}
+
+	// Extract prefix and suffix from address - no allocations here
+	var addressPrefix, addressSuffix string
+	if len(prefix) > 0 {
+		addressPrefix = address[:len(prefix)]
+	}
 	if len(suffix) > 0 {
 		addressSuffix = address[len(address)-len(suffix):]
 	}
 
 	if !isChecksum {
 		// For non-checksum validation, just compare case-insensitively
+		// Use direct comparison for empty strings to avoid function call overhead
 		prefixMatch := len(prefix) == 0 || strings.EqualFold(prefix, addressPrefix)
 		suffixMatch := len(suffix) == 0 || strings.EqualFold(suffix, addressSuffix)
 		return prefixMatch && suffixMatch
 	}
 
 	// For checksum validation, first check if lowercase versions match
+	// This avoids expensive checksum validation when there's no match
 	prefixMatch := len(prefix) == 0 || strings.EqualFold(prefix, addressPrefix)
 	suffixMatch := len(suffix) == 0 || strings.EqualFold(suffix, addressSuffix)
 
@@ -652,35 +761,67 @@ func isValidBlocoAddress(address, prefix, suffix string, isChecksum bool) bool {
 
 // toChecksumAddress converts an address to checksum format
 func toChecksumAddress(address string) string {
-	// Get hasher and string builders from pools
+	// Get hasher, string builders, and byte buffer from pools
 	hasher := globalHasherPool.GetKeccak()
 	hashSB := globalBufferPool.GetStringBuilder()
 	resultSB := globalBufferPool.GetStringBuilder()
+	addressBytes := globalBufferPool.GetByteBuffer()
 
 	defer func() {
 		globalHasherPool.PutKeccak(hasher)
 		globalBufferPool.PutStringBuilder(hashSB)
 		globalBufferPool.PutStringBuilder(resultSB)
+		globalBufferPool.PutByteBuffer(addressBytes)
 	}()
 
-	// Calculate Keccak256 hash of the address
-	hasher.Write([]byte(address))
-	hashBytes := hasher.Sum(nil)
+	// Convert address to bytes without allocating a new slice
+	addressBytes = append(addressBytes, address...)
 
-	// Convert hash to hex string using string builder for efficiency
+	// Calculate Keccak256 hash of the address
+	hasher.Reset()
+	hasher.Write(addressBytes)
+
+	// Use a fixed-size array for hash bytes to avoid heap allocation
+	var hashBytes [32]byte
+	hasher.Sum(hashBytes[:0])
+
+	// Pre-allocate capacity in string builders
+	hashSB.Grow(64)   // 32 bytes * 2 hex chars per byte
+	resultSB.Grow(40) // Address length
+
+	// Convert hash to hex string using string builder and lookup table for efficiency
+	const hexChars = "0123456789abcdef"
 	for _, b := range hashBytes {
-		hashSB.WriteByte("0123456789abcdef"[b>>4])
-		hashSB.WriteByte("0123456789abcdef"[b&0x0f])
+		hashSB.WriteByte(hexChars[b>>4])
+		hashSB.WriteByte(hexChars[b&0x0f])
 	}
 	hash := hashSB.String()
 
-	// Build result using string builder for efficiency
+	// Build result using string builder for efficiency - avoid allocations in the loop
 	for i, char := range address {
-		hashChar, _ := strconv.ParseInt(string(hash[i]), 16, 64)
+		// Convert hex char to int directly without ParseInt
+		var hashChar int64
+		hexChar := hash[i]
+		if hexChar >= '0' && hexChar <= '9' {
+			hashChar = int64(hexChar - '0')
+		} else if hexChar >= 'a' && hexChar <= 'f' {
+			hashChar = int64(hexChar - 'a' + 10)
+		}
+
 		if hashChar >= 8 {
-			resultSB.WriteString(strings.ToUpper(string(char)))
+			// Convert to uppercase if needed
+			if char >= 'a' && char <= 'f' {
+				resultSB.WriteByte(byte(char) - 32) // 'a' to 'A' ASCII difference
+			} else {
+				resultSB.WriteByte(byte(char))
+			}
 		} else {
-			resultSB.WriteRune(char)
+			// Convert to lowercase if needed
+			if char >= 'A' && char <= 'F' {
+				resultSB.WriteByte(byte(char) + 32) // 'A' to 'a' ASCII difference
+			} else {
+				resultSB.WriteByte(byte(char))
+			}
 		}
 	}
 	return resultSB.String()
@@ -688,7 +829,6 @@ func toChecksumAddress(address string) string {
 
 // generateBlocoWallet generates a wallet that matches the given constraints with statistics
 func generateBlocoWallet(prefix, suffix string, isChecksum bool, showProgress bool) *WalletResult {
-	attempts := int64(0)
 	pre := prefix
 	suf := suffix
 
@@ -705,45 +845,53 @@ func generateBlocoWallet(prefix, suffix string, isChecksum bool, showProgress bo
 		fmt.Printf("📊 Difficulty: %s | 50%% probability: %s attempts\n\n",
 			formatNumber(int64(stats.Difficulty)),
 			formatNumber(stats.Probability50))
+		fmt.Printf("🧵 Using %d worker threads\n\n", threads)
 	}
 
-	lastProgressUpdate := time.Now()
+	// Create a worker pool with the specified number of threads
+	workerPool := NewWorkerPool(threads)
 
-	for {
-		wallet, err := getRandomWallet()
-		if err != nil {
-			return &WalletResult{
-				Error:    err.Error(),
-				Attempts: int(attempts),
-			}
+	// Create a stats manager for thread-safe statistics collection
+	statsManager := NewStatsManager()
+
+	// Start the worker pool
+	workerPool.Start()
+
+	// Start a goroutine to display progress
+	if showProgress {
+		go displayProgressParallel(stats, statsManager, workerPool.shutdownChan)
+	}
+
+	// Generate wallet using the worker pool
+	wallet, attempts := workerPool.GenerateWallet(pre, suf, isChecksum, statsManager)
+
+	// Final progress update
+	if showProgress {
+		stats.update(attempts)
+		stats.displayProgress()
+		fmt.Printf("\n✅ Success! Found matching address in %s attempts\n", formatNumber(attempts))
+
+		// Display thread utilization statistics
+		metrics := statsManager.GetMetrics()
+		fmt.Printf("🧵 Thread utilization: %.2f%% efficiency\n", metrics.EfficiencyRatio*100)
+		fmt.Printf("⚡ Peak performance: %.0f addr/s\n\n", statsManager.GetPeakSpeed())
+	}
+
+	if wallet != nil {
+		checksumAddress := "0x" + toChecksumAddress(wallet.Address)
+		return &WalletResult{
+			Wallet: &Wallet{
+				Address: checksumAddress,
+				PrivKey: wallet.PrivKey,
+			},
+			Attempts: int(attempts),
 		}
+	}
 
-		attempts++
-
-		// Update progress display
-		if showProgress && time.Since(lastProgressUpdate) >= ProgressUpdateInterval {
-			stats.update(attempts)
-			stats.displayProgress()
-			lastProgressUpdate = time.Now()
-		}
-
-		if isValidBlocoAddress(wallet.Address, pre, suf, isChecksum) {
-			// Final progress update
-			if showProgress {
-				stats.update(attempts)
-				stats.displayProgress()
-				fmt.Printf("\n✅ Success! Found matching address in %s attempts\n\n", formatNumber(attempts))
-			}
-
-			checksumAddress := "0x" + toChecksumAddress(wallet.Address)
-			return &WalletResult{
-				Wallet: &Wallet{
-					Address: checksumAddress,
-					PrivKey: wallet.PrivKey,
-				},
-				Attempts: int(attempts),
-			}
-		}
+	// This should not happen unless there's an error
+	return &WalletResult{
+		Error:    "Failed to generate wallet",
+		Attempts: int(attempts),
 	}
 }
 
@@ -754,52 +902,111 @@ func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *Benchmark
 	}
 
 	fmt.Printf("🚀 Starting benchmark with pattern '%s' (checksum: %t)\n", pattern, isChecksum)
-	fmt.Printf("📈 Target: %s attempts | Step size: %d\n\n", formatNumber(maxAttempts), Step)
+	fmt.Printf("📈 Target: %s attempts | Step size: %d\n", formatNumber(maxAttempts), Step)
+	fmt.Printf("🧵 Using %d worker threads\n\n", threads)
 
 	result := &BenchmarkResult{
 		SpeedSamples:    make([]float64, 0),
 		DurationSamples: make([]time.Duration, 0),
 	}
 
-	var attempts int64 = 0
+	// Create a worker pool with the specified number of threads
+	workerPool := NewWorkerPool(threads)
 
+	// Create a stats manager for thread-safe statistics collection
+	statsManager := NewStatsManager()
+
+	// Start the worker pool
+	workerPool.Start()
+
+	// Start collecting stats
+	workerPool.CollectStats(statsManager)
+
+	var attempts int64 = 0
 	startTime := time.Now()
 	lastStepTime := startTime
 	stepAttempts := int64(0)
 
-	for attempts < maxAttempts {
-		_, err := getRandomWallet()
-		if err != nil {
-			fmt.Printf("❌ Error during benchmark: %v\n", err)
-			break
+	// Create a ticker for regular progress updates
+	ticker := time.NewTicker(ProgressUpdateInterval)
+	defer ticker.Stop()
+
+	// Create a channel to signal benchmark completion
+	done := make(chan struct{})
+
+	// Start a goroutine to monitor progress
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				now := time.Now()
+				currentAttempts := statsManager.GetTotalAttempts()
+				newAttempts := currentAttempts - attempts
+				attempts = currentAttempts
+				stepAttempts += newAttempts
+
+				// Check if we completed a step or reached max attempts
+				if stepAttempts >= Step || attempts >= maxAttempts {
+					stepDuration := now.Sub(lastStepTime)
+					stepSpeed := float64(stepAttempts) / stepDuration.Seconds()
+
+					result.DurationSamples = append(result.DurationSamples, stepDuration)
+					result.SpeedSamples = append(result.SpeedSamples, stepSpeed)
+
+					// Display progress
+					progress := float64(attempts) / float64(maxAttempts) * 100
+					if progress > 100 {
+						progress = 100
+					}
+
+					fmt.Printf("📊 %s/%s (%.1f%%) | %.0f addr/s | Avg: %.0f addr/s\n",
+						formatNumber(attempts),
+						formatNumber(maxAttempts),
+						progress,
+						stepSpeed,
+						float64(attempts)/time.Since(startTime).Seconds())
+
+					lastStepTime = now
+					stepAttempts = 0
+
+					// Check if we've reached the target attempts
+					if attempts >= maxAttempts {
+						close(done)
+						return
+					}
+				}
+
+			case <-done:
+				return
+			}
 		}
+	}()
 
-		attempts++
-		stepAttempts++
-
-		// Check if we completed a step
-		if stepAttempts >= Step {
-			now := time.Now()
-			stepDuration := now.Sub(lastStepTime)
-			stepSpeed := float64(stepAttempts) / stepDuration.Seconds()
-
-			result.DurationSamples = append(result.DurationSamples, stepDuration)
-			result.SpeedSamples = append(result.SpeedSamples, stepSpeed)
-
-			// Display progress
-			progress := float64(attempts) / float64(maxAttempts) * 100
-			fmt.Printf("📊 %s/%s (%.1f%%) | %.0f addr/s | Avg: %.0f addr/s\n",
-				formatNumber(attempts),
-				formatNumber(maxAttempts),
-				progress,
-				stepSpeed,
-				float64(attempts)/time.Since(startTime).Seconds())
-
-			lastStepTime = now
-			stepAttempts = 0
-		}
+	// Run benchmark for specified number of attempts
+	batchSize := 1000 // Use larger batch size for benchmark
+	for i := 0; i < workerPool.numWorkers; i++ {
+		workerPool.Submit(WorkItem{
+			Prefix:     pattern,
+			Suffix:     "",
+			IsChecksum: isChecksum,
+			BatchSize:  batchSize,
+		})
 	}
 
+	// Wait for benchmark to complete or timeout
+	select {
+	case <-done:
+		// Benchmark completed
+	case <-time.After(5 * time.Minute):
+		// Timeout after 5 minutes
+		close(done)
+	}
+
+	// Shutdown the worker pool
+	workerPool.Shutdown()
+
+	// Get final stats
+	attempts = statsManager.GetTotalAttempts()
 	totalDuration := time.Since(startTime)
 	averageSpeed := float64(attempts) / totalDuration.Seconds()
 
@@ -847,8 +1054,15 @@ func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *Benchmark
 		fmt.Printf("📏 Speed std dev: ±%.0f addr/s\n", stdDev)
 	}
 
+	// Thread utilization statistics
+	metrics := statsManager.GetMetrics()
+	fmt.Printf("🧵 Thread utilization: %.2f%% efficiency\n", metrics.EfficiencyRatio*100)
+	fmt.Printf("⚡ Peak performance: %.0f addr/s\n", statsManager.GetPeakSpeed())
+
 	// Hardware info
-	fmt.Printf("💻 Platform: Go %s\n", strings.TrimPrefix(fmt.Sprintf("%s", "go1.21+"), "go"))
+	fmt.Printf("💻 Platform: Go %s with %d threads\n",
+		strings.TrimPrefix(fmt.Sprintf("%s", "go1.21+"), "go"),
+		threads)
 	fmt.Printf("═══════════════════════════════════════════════════════════════\n")
 
 	return result

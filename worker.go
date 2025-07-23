@@ -191,6 +191,8 @@ func (w *Worker) privateToAddressOptimized(privateKey []byte, cryptoPool *Crypto
 	privateKeyECDSA.D = privateKeyInt
 
 	// Calculate public key coordinates
+	// Using crypto.S256().ScalarBaseMult directly is deprecated, but we're using it for compatibility
+	// In a future update, this should be replaced with crypto/ecdh package
 	privateKeyECDSA.PublicKey.X, privateKeyECDSA.PublicKey.Y = crypto.S256().ScalarBaseMult(privateKey)
 
 	// Get uncompressed public key bytes (without 0x04 prefix)

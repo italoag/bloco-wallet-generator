@@ -4,7 +4,7 @@
   "description": "Listens to Go source files, configuration files, and build files for changes and automatically updates documentation in README.md or docs folder when source code is modified",
   "version": "1",
   "when": {
-    "type": "fileEdited",
+    "type": "userTriggered",
     "patterns": [
       "*.go",
       "go.mod",
