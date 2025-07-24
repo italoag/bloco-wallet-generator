@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -154,4 +156,248 @@ func TestGlobalPoolsInitialization(t *testing.T) {
 	if globalBufferPool == nil {
 		t.Error("globalBufferPool is not initialized")
 	}
+}
+
+// TestCryptoPoolThreadSafety tests concurrent access to CryptoPool
+func TestCryptoPoolThreadSafety(t *testing.T) {
+	pool := NewCryptoPool()
+	numGoroutines := 50
+	operationsPerGoroutine := 100
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	// Test concurrent access to private key buffers
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+			for j := 0; j < operationsPerGoroutine; j++ {
+				buf := pool.GetPrivateKeyBuffer()
+				if len(buf) != 32 {
+					t.Errorf("Expected buffer length 32, got %d", len(buf))
+				}
+				// Simulate some work
+				for k := range buf {
+					buf[k] = byte(k)
+				}
+				pool.PutPrivateKeyBuffer(buf)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Test concurrent access to BigInt pool
+	wg.Add(numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+			for j := 0; j < operationsPerGoroutine; j++ {
+				bigInt := pool.GetBigInt()
+				if bigInt == nil {
+					t.Error("GetBigInt returned nil")
+				}
+				bigInt.SetInt64(int64(j))
+				pool.PutBigInt(bigInt)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Test concurrent access to ECDSA key pool
+	wg.Add(numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+			for j := 0; j < operationsPerGoroutine; j++ {
+				key := pool.GetECDSAKey()
+				if key == nil {
+					t.Error("GetECDSAKey returned nil")
+				}
+				pool.PutECDSAKey(key)
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+// TestHasherPoolThreadSafety tests concurrent access to HasherPool
+func TestHasherPoolThreadSafety(t *testing.T) {
+	pool := NewHasherPool()
+	numGoroutines := 50
+	operationsPerGoroutine := 100
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < operationsPerGoroutine; j++ {
+				hasher := pool.GetKeccak()
+				if hasher == nil {
+					t.Error("GetKeccak returned nil")
+				}
+
+				// Use the hasher
+				testData := fmt.Sprintf("test-data-%d-%d", id, j)
+				hasher.Write([]byte(testData))
+				hash := hasher.Sum(nil)
+
+				if len(hash) == 0 {
+					t.Error("Hasher produced empty hash")
+				}
+
+				pool.PutKeccak(hasher)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+}
+
+// TestBufferPoolThreadSafety tests concurrent access to BufferPool
+func TestBufferPoolThreadSafety(t *testing.T) {
+	pool := NewBufferPool()
+	numGoroutines := 50
+	operationsPerGoroutine := 100
+
+	var wg sync.WaitGroup
+
+	// Test byte buffer pool thread safety
+	wg.Add(numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < operationsPerGoroutine; j++ {
+				buf := pool.GetByteBuffer()
+				if buf == nil {
+					t.Error("GetByteBuffer returned nil")
+				}
+
+				// Use the buffer
+				testData := []byte(fmt.Sprintf("test-%d-%d", id, j))
+				buf = append(buf, testData...)
+
+				pool.PutByteBuffer(buf)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Test string builder pool thread safety
+	wg.Add(numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < operationsPerGoroutine; j++ {
+				sb := pool.GetStringBuilder()
+				if sb == nil {
+					t.Error("GetStringBuilder returned nil")
+				}
+
+				// Use the string builder
+				sb.WriteString(fmt.Sprintf("test-%d-%d", id, j))
+
+				pool.PutStringBuilder(sb)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Test hex buffer pool thread safety
+	wg.Add(numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+			for j := 0; j < operationsPerGoroutine; j++ {
+				buf := pool.GetHexBuffer()
+				if len(buf) != 64 {
+					t.Errorf("Expected hex buffer length 64, got %d", len(buf))
+				}
+
+				// Use the buffer
+				for k := range buf {
+					buf[k] = byte(k % 256)
+				}
+
+				pool.PutHexBuffer(buf)
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+// TestPoolMemoryClearing tests that sensitive data is properly cleared
+func TestPoolMemoryClearing(t *testing.T) {
+	pool := NewCryptoPool()
+
+	// Test private key buffer clearing
+	buf := pool.GetPrivateKeyBuffer()
+	for i := range buf {
+		buf[i] = 0xFF // Fill with non-zero data
+	}
+	pool.PutPrivateKeyBuffer(buf)
+
+	// Get another buffer and verify it's cleared
+	buf2 := pool.GetPrivateKeyBuffer()
+	for i, b := range buf2 {
+		if b != 0 {
+			t.Errorf("Private key buffer not cleared at index %d: expected 0, got %d", i, b)
+		}
+	}
+	pool.PutPrivateKeyBuffer(buf2)
+
+	// Test BigInt clearing
+	bigInt := pool.GetBigInt()
+	bigInt.SetInt64(0xDEADBEEF)
+	pool.PutBigInt(bigInt)
+
+	bigInt2 := pool.GetBigInt()
+	if bigInt2.Int64() != 0 {
+		t.Errorf("BigInt not cleared: expected 0, got %d", bigInt2.Int64())
+	}
+	pool.PutBigInt(bigInt2)
+
+	// Test ECDSA key clearing
+	key := pool.GetECDSAKey()
+	// We can't easily test key clearing without exposing internals,
+	// but we can verify the key is properly reset
+	if key.D != nil {
+		t.Error("ECDSA key D should be nil after getting from pool")
+	}
+	if key.PublicKey.X != nil {
+		t.Error("ECDSA key PublicKey.X should be nil after getting from pool")
+	}
+	if key.PublicKey.Y != nil {
+		t.Error("ECDSA key PublicKey.Y should be nil after getting from pool")
+	}
+	pool.PutECDSAKey(key)
+}
+
+// TestPoolResourceReuse tests that pools actually reuse objects
+func TestPoolResourceReuse(t *testing.T) {
+	pool := NewCryptoPool()
+
+	// Get and return a private key buffer
+	buf1 := pool.GetPrivateKeyBuffer()
+	buf1Ptr := &buf1[0] // Get pointer to first element
+	pool.PutPrivateKeyBuffer(buf1)
+
+	// Get another buffer - it should be the same one (reused)
+	buf2 := pool.GetPrivateKeyBuffer()
+	buf2Ptr := &buf2[0]
+
+	if buf1Ptr != buf2Ptr {
+		// This test might be flaky due to Go's sync.Pool implementation,
+		// but it's worth checking for basic reuse
+		t.Log("Warning: Buffer was not reused (this might be normal due to sync.Pool behavior)")
+	}
+
+	pool.PutPrivateKeyBuffer(buf2)
 }

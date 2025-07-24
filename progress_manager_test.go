@@ -93,6 +93,9 @@ func TestProgressManagerDisplayFormat(t *testing.T) {
 	// Create a progress manager
 	progressManager := NewProgressManager(stats, statsManager)
 
+	// Start the progress manager to activate it
+	progressManager.Start()
+
 	// Update some worker stats
 	statsManager.UpdateWorkerStats(WorkerStats{
 		WorkerID:   1,
@@ -126,6 +129,9 @@ func TestProgressManagerDisplayFormat(t *testing.T) {
 	if aggregatedStats.ActiveWorkers != 2 {
 		t.Errorf("Expected 2 active workers, got %d", aggregatedStats.ActiveWorkers)
 	}
+
+	// Stop the progress manager
+	progressManager.Stop()
 }
 
 // TestProgressManagerShutdown tests that the progress manager can be shut down gracefully

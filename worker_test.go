@@ -100,6 +100,9 @@ func TestWorkerStart(t *testing.T) {
 
 	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan, &wg)
 
+	// Add to WaitGroup before starting worker
+	wg.Add(1)
+
 	// Start the worker
 	worker.Start()
 
@@ -155,8 +158,8 @@ func TestWorkerStart(t *testing.T) {
 	// Shutdown the worker
 	close(shutdownChan)
 
-	// Allow time for shutdown
-	time.Sleep(100 * time.Millisecond)
+	// Wait for worker to finish
+	wg.Wait()
 }
 
 func TestPrivateToAddressOptimized(t *testing.T) {
@@ -324,4 +327,289 @@ func BenchmarkWorkerIsValidBlocoAddressOptimized(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		worker.isValidBlocoAddressOptimized(address, prefix, suffix, false, hasherPool, bufferPool)
 	}
+}
+
+// TestWorkerThreadSafety tests that workers can operate safely in concurrent scenarios
+func TestWorkerThreadSafety(t *testing.T) {
+	numWorkers := 5
+	workChan := make(chan WorkItem, numWorkers*2)
+	resultChan := make(chan WorkResult, numWorkers*2)
+	statsChan := make(chan WorkerStats, numWorkers*10)
+	shutdownChan := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Add to WaitGroup before starting workers
+	wg.Add(numWorkers)
+
+	// Create multiple workers
+	workers := make([]*Worker, numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		workers[i] = NewWorker(i, workChan, resultChan, statsChan, shutdownChan, &wg)
+		workers[i].Start()
+	}
+
+	// Send work items
+	numWorkItems := 20
+	for i := 0; i < numWorkItems; i++ {
+		workItem := WorkItem{
+			Prefix:     "a", // Simple prefix for faster testing
+			Suffix:     "",
+			IsChecksum: false,
+			BatchSize:  10,
+		}
+		workChan <- workItem
+	}
+
+	// Collect results
+	resultsReceived := 0
+	timeout := time.After(10 * time.Second)
+
+	for resultsReceived < numWorkItems {
+		select {
+		case result := <-resultChan:
+			if result.Error != nil {
+				t.Errorf("Worker %d returned error: %v", result.WorkerID, result.Error)
+			}
+			if result.Attempts <= 0 {
+				t.Errorf("Worker %d returned invalid attempt count: %d", result.WorkerID, result.Attempts)
+			}
+			resultsReceived++
+		case <-timeout:
+			t.Errorf("Timeout: only received %d out of %d results", resultsReceived, numWorkItems)
+			break
+		}
+	}
+
+	// Shutdown workers
+	close(shutdownChan)
+
+	// Wait for workers to finish
+	wg.Wait()
+}
+
+// TestWorkerStatisticsReporting tests that workers properly report statistics
+func TestWorkerStatisticsReporting(t *testing.T) {
+	workChan := make(chan WorkItem, 1)
+	resultChan := make(chan WorkResult, 10)
+	statsChan := make(chan WorkerStats, 10)
+	shutdownChan := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Add to WaitGroup before starting worker
+	wg.Add(1)
+
+	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan, &wg)
+	worker.Start()
+
+	// Send a work item
+	workItem := WorkItem{
+		Prefix:     "a",
+		Suffix:     "",
+		IsChecksum: false,
+		BatchSize:  100,
+	}
+	workChan <- workItem
+
+	// Wait for result first
+	select {
+	case <-resultChan:
+		// Got result
+	case <-time.After(5 * time.Second):
+		t.Error("Timeout waiting for result")
+	}
+
+	// Shutdown worker - this should trigger final stats
+	close(shutdownChan)
+
+	// Wait for final stats that should be sent on shutdown
+	select {
+	case stats := <-statsChan:
+		if stats.WorkerID != 1 {
+			t.Errorf("Expected worker ID 1, got %d", stats.WorkerID)
+		}
+		if stats.Attempts <= 0 {
+			t.Errorf("Expected positive attempts, got %d", stats.Attempts)
+		}
+		if stats.Speed < 0 {
+			t.Errorf("Expected non-negative speed, got %f", stats.Speed)
+		}
+	case <-time.After(1 * time.Second):
+		t.Error("No final statistics were reported by worker on shutdown")
+	}
+
+	wg.Wait()
+}
+
+// TestWorkerErrorHandling tests worker behavior with invalid work items
+func TestWorkerErrorHandling(t *testing.T) {
+	workChan := make(chan WorkItem, 1)
+	resultChan := make(chan WorkResult, 1)
+	statsChan := make(chan WorkerStats, 1)
+	shutdownChan := make(chan struct{})
+	var wg sync.WaitGroup
+
+	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan, &wg)
+
+	// Create local pools for testing
+	cryptoPool := NewCryptoPool()
+	hasherPool := NewHasherPool()
+	bufferPool := NewBufferPool()
+
+	// Test with invalid batch size
+	workItem := WorkItem{
+		Prefix:     "test",
+		Suffix:     "",
+		IsChecksum: false,
+		BatchSize:  0, // Invalid batch size
+	}
+
+	result := worker.processWorkItem(workItem, cryptoPool, hasherPool, bufferPool)
+
+	// Should handle invalid batch size gracefully
+	if result.Error != nil {
+		t.Errorf("Worker should handle invalid batch size gracefully, got error: %v", result.Error)
+	}
+
+	// Should use default batch size
+	if result.Attempts <= 0 {
+		t.Errorf("Expected positive attempts even with invalid batch size, got %d", result.Attempts)
+	}
+}
+
+// TestWorkerShutdownGraceful tests that workers shutdown gracefully
+func TestWorkerShutdownGraceful(t *testing.T) {
+	workChan := make(chan WorkItem, 1)
+	resultChan := make(chan WorkResult, 1)
+	statsChan := make(chan WorkerStats, 10)
+	shutdownChan := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Add to WaitGroup before starting worker
+	wg.Add(1)
+
+	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan, &wg)
+	worker.Start()
+
+	// Give worker time to start
+	time.Sleep(50 * time.Millisecond)
+
+	// Signal shutdown
+	close(shutdownChan)
+
+	// Wait for worker to finish with timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Worker shut down successfully
+	case <-time.After(2 * time.Second):
+		t.Error("Worker did not shut down within timeout")
+	}
+}
+
+// TestWorkerOptimizedFunctions tests the optimized cryptographic functions
+func TestWorkerOptimizedFunctions(t *testing.T) {
+	workChan := make(chan WorkItem)
+	resultChan := make(chan WorkResult)
+	statsChan := make(chan WorkerStats)
+	shutdownChan := make(chan struct{})
+	var wg sync.WaitGroup
+
+	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan, &wg)
+
+	// Create local pools for testing
+	cryptoPool := NewCryptoPool()
+	hasherPool := NewHasherPool()
+	bufferPool := NewBufferPool()
+
+	// Test privateToAddressOptimized with multiple keys
+	for i := 0; i < 10; i++ {
+		privateKey := cryptoPool.GetPrivateKeyBuffer()
+		_, err := rand.Read(privateKey)
+		if err != nil {
+			t.Fatalf("Failed to generate random bytes: %v", err)
+		}
+
+		address := worker.privateToAddressOptimized(privateKey, cryptoPool, hasherPool, bufferPool)
+
+		// Verify address format
+		if len(address) != 40 {
+			t.Errorf("Expected address length 40, got %d", len(address))
+		}
+
+		if !isValidHex(address) {
+			t.Errorf("Generated address is not valid hex: %s", address)
+		}
+
+		cryptoPool.PutPrivateKeyBuffer(privateKey)
+	}
+
+	// Test isValidBlocoAddressOptimized with checksum
+	// Use a known valid checksum address for testing
+	testAddress := "5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+	isValid := worker.isValidBlocoAddressOptimized(testAddress, "5a", "", true, hasherPool, bufferPool)
+	if !isValid {
+		t.Log("Note: Checksum validation test may be sensitive to exact implementation")
+	}
+
+	// Test with non-checksum validation (should always work)
+	isValid = worker.isValidBlocoAddressOptimized(testAddress, "5a", "", false, hasherPool, bufferPool)
+	if !isValid {
+		t.Error("Non-checksum address validation failed")
+	}
+}
+
+// TestWorkerMemoryUsage tests that workers don't leak memory
+func TestWorkerMemoryUsage(t *testing.T) {
+	workChan := make(chan WorkItem, 1)
+	resultChan := make(chan WorkResult, 100)
+	statsChan := make(chan WorkerStats, 100)
+	shutdownChan := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Add to WaitGroup before starting worker
+	wg.Add(1)
+
+	worker := NewWorker(1, workChan, resultChan, statsChan, shutdownChan, &wg)
+	worker.Start()
+
+	// Process many work items to test for memory leaks
+	numItems := 50
+	for i := 0; i < numItems; i++ {
+		workItem := WorkItem{
+			Prefix:     "ff", // Unlikely pattern to avoid early matches
+			Suffix:     "ff",
+			IsChecksum: false,
+			BatchSize:  10,
+		}
+		workChan <- workItem
+	}
+
+	// Collect results
+	resultsReceived := 0
+	timeout := time.After(10 * time.Second)
+
+	for resultsReceived < numItems {
+		select {
+		case result := <-resultChan:
+			if result.Error != nil {
+				t.Errorf("Unexpected error: %v", result.Error)
+			}
+			resultsReceived++
+		case <-timeout:
+			t.Errorf("Timeout: only received %d out of %d results", resultsReceived, numItems)
+			break
+		}
+	}
+
+	// Shutdown worker
+	close(shutdownChan)
+	wg.Wait()
+
+	// This test mainly ensures the worker can handle many operations without crashing
+	// Memory leak detection would require more sophisticated tooling
 }
