@@ -1,12 +1,12 @@
 package main
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"hash"
-	"log"
 	"math"
 	"math/big"
 	"os"
@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/charmbracelet/fang"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/sha3"
@@ -1488,18 +1489,50 @@ var (
 // Benchmark command
 var benchmarkCmd = &cobra.Command{
 	Use:   "benchmark",
-	Short: "Run performance benchmark",
-	Long: `Run a performance benchmark to test address generation speed.
-	
-This command generates addresses continuously and measures performance metrics
-including average speed, speed range, and consistency. It supports multi-threaded
-execution and provides detailed scalability metrics.
+	Short: "Run performance benchmark to test address generation speed",
+	Long: `Run a comprehensive performance benchmark to test address generation speed
+and analyze system performance characteristics.
 
-Examples:
-  bloco-eth benchmark --attempts 10000 --pattern "abc"
-  bloco-eth benchmark --attempts 50000 --pattern "abc" --checksum
-  bloco-eth benchmark --attempts 20000 --pattern "abc" --threads 4
-  bloco-eth benchmark --attempts 10000 --pattern "abc" --compare-threads`,
+This command generates addresses continuously and measures detailed performance metrics
+including average speed, speed distribution, thread scalability, and system efficiency.
+It supports multi-threaded execution with automatic thread optimization and provides
+comprehensive scalability analysis.
+
+Benchmark Metrics:
+  • Average generation speed (addresses/second)
+  • Speed distribution (min, max, median)
+  • Thread scalability and efficiency
+  • Memory usage and optimization
+  • System resource utilization
+
+Performance Analysis:
+  • Single-thread baseline measurement
+  • Multi-thread scalability testing
+  • Amdahl's Law efficiency calculation
+  • Thread balance and utilization metrics`,
+	Example: `  # Basic benchmark with default pattern 'abc'
+  bloco-eth benchmark
+
+  # Benchmark with specific number of attempts
+  bloco-eth benchmark --attempts 50000
+
+  # Benchmark with custom pattern
+  bloco-eth benchmark --pattern deadbeef --attempts 25000
+
+  # Benchmark with checksum validation (more CPU intensive)
+  bloco-eth benchmark --pattern AbCdEf --checksum --attempts 10000
+
+  # Benchmark with specific thread count
+  bloco-eth benchmark --threads 8 --attempts 20000
+
+  # Compare performance across different thread counts
+  bloco-eth benchmark --compare-threads --attempts 15000
+
+  # Intensive benchmark for performance analysis
+  bloco-eth benchmark --pattern cafe --attempts 100000 --compare-threads
+
+  # Quick benchmark for development testing
+  bloco-eth benchmark --attempts 5000 --pattern abc`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if benchmarkPattern == "" {
 			// Use default pattern if none specified
@@ -1670,15 +1703,50 @@ Examples:
 // Statistics command
 var statsCmd = &cobra.Command{
 	Use:   "stats",
-	Short: "Show difficulty statistics for a pattern",
-	Long: `Display detailed statistics about the difficulty of generating
-a bloco address with the specified pattern.
+	Short: "Analyze difficulty statistics for address patterns",
+	Long: `Display comprehensive difficulty analysis and statistics for generating
+bloco addresses with the specified prefix and suffix patterns.
 
-This includes difficulty calculation, probability analysis, and time estimates.
+This command provides detailed mathematical analysis including difficulty calculations,
+probability distributions, time estimates at various speeds, and practical recommendations
+for pattern generation. Use this before attempting to generate difficult patterns to
+understand the computational requirements.
 
-Examples:
-  bloco-eth stats --prefix abc --suffix 123
-  bloco-eth stats --prefix DeAdBeEf --checksum`,
+Statistical Analysis:
+  • Base and total difficulty calculations
+  • Probability analysis for different attempt counts
+  • Time estimates at various generation speeds
+  • Pattern complexity assessment and recommendations
+  • Checksum impact on difficulty (when enabled)
+
+Difficulty Levels:
+  • Easy (1-3 chars): Generates quickly, suitable for testing
+  • Moderate (4-5 chars): May take some time, reasonable for production
+  • Hard (6-7 chars): Considerable time required, plan accordingly
+  • Extreme (8+ chars): May take days/weeks/years, use with caution`,
+	Example: `  # Analyze difficulty for prefix pattern
+  bloco-eth stats --prefix abc
+
+  # Analyze combined prefix and suffix pattern
+  bloco-eth stats --prefix dead --suffix beef
+
+  # Analyze with checksum validation (increases difficulty)
+  bloco-eth stats --prefix DeAdBeEf --checksum
+
+  # Check difficulty for suffix-only pattern
+  bloco-eth stats --suffix cafe
+
+  # Analyze complex pattern before generation
+  bloco-eth stats --prefix 1337 --suffix c0de --checksum
+
+  # Quick difficulty check for development
+  bloco-eth stats --prefix ab --suffix cd
+
+  # Analyze very difficult pattern (use with caution)
+  bloco-eth stats --prefix abcdef --suffix 123456
+
+  # Compare checksum vs non-checksum difficulty
+  bloco-eth stats --prefix AbCd --checksum`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if prefix == "" && suffix == "" {
 			fmt.Println("❌ Error: At least one of --prefix or --suffix must be specified")
@@ -1751,20 +1819,46 @@ Examples:
 var rootCmd = &cobra.Command{
 	Use:   "bloco-eth",
 	Short: "Generate Ethereum bloco wallets with custom prefix and suffix",
-	Long: `A high-performance CLI tool to generate Ethereum bloco wallets with custom 
+	Long: `A high-performance CLI tool for generating Ethereum bloco wallets with custom 
 prefix and suffix patterns.
 
 This tool generates Ethereum wallets where the address starts with a specific prefix
-and/or ends with a specific suffix. It supports checksum validation for more secure
-bloco addresses and provides detailed statistics and progress information.
+and/or ends with a specific suffix. It supports EIP-55 checksum validation for more
+secure bloco addresses and provides detailed statistics and progress information.
 
-Examples:
-  bloco-eth --prefix abc --suffix 123 --count 5
-  bloco-eth --prefix deadbeef --checksum --count 1 --progress
-  bloco-eth --suffix coffee --count 10
-  
-Use 'bloco-eth benchmark' to test performance
-Use 'bloco-eth stats' to analyze pattern difficulty`,
+Features:
+  • Multi-threaded parallel processing for optimal performance
+  • Real-time progress tracking with speed metrics
+  • EIP-55 checksum validation support
+  • Difficulty analysis and time estimation
+  • Cross-platform support (Linux, Windows, macOS)
+  • Comprehensive benchmarking and statistics
+
+Pattern Format:
+  • Prefix: hex characters that the address must start with
+  • Suffix: hex characters that the address must end with
+  • Valid hex: 0-9, a-f, A-F (case matters for checksum validation)
+  • Maximum combined length: 40 characters (full address length)`,
+	Example: `  # Generate a single wallet with prefix 'abc'
+  bloco-eth --prefix abc
+
+  # Generate 5 wallets with prefix 'dead' and suffix 'beef'
+  bloco-eth --prefix dead --suffix beef --count 5
+
+  # Generate with checksum validation (case-sensitive)
+  bloco-eth --prefix DeAdBeEf --checksum --count 1
+
+  # Show progress for long-running generation
+  bloco-eth --prefix abcdef --progress
+
+  # Use specific number of threads
+  bloco-eth --prefix abc --threads 8
+
+  # Generate multiple wallets with progress tracking
+  bloco-eth --prefix cafe --suffix babe --count 10 --progress
+
+  # Complex pattern with checksum
+  bloco-eth --prefix 1337 --suffix c0de --checksum --progress`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Validate inputs
 		if prefix == "" && suffix == "" {
@@ -1840,7 +1934,11 @@ func main() {
 	// Initialize object pools for performance optimization
 	initializePools()
 
-	if err := rootCmd.Execute(); err != nil {
-		log.Fatal(err)
+	if err := fang.Execute(
+		context.Background(),
+		rootCmd,
+		fang.WithNotifySignal(os.Interrupt, os.Kill),
+	); err != nil {
+		os.Exit(1)
 	}
 }
