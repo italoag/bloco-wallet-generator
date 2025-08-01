@@ -1,6 +1,6 @@
 # Bloco Wallet Generator
 
-A high-performance CLI tool for generating Ethereum bloco wallets with custom prefixes and suffixes, built in Go using the Cobra framework.
+A high-performance CLI tool for generating Ethereum bloco wallets with custom prefixes and suffixes, built in Go using the Cobra framework with enhanced Fang integration for improved user experience.
 
 ## Features
 
@@ -14,6 +14,10 @@ A high-performance CLI tool for generating Ethereum bloco wallets with custom pr
 - 🏁 Performance benchmarking tools with multi-threading support
 - 📐 Probability calculations and success predictions
 - 🔧 **IMPLEMENTED**: Configurable thread count with auto-detection
+- 🎨 **NEW**: Enhanced CLI interface with Fang integration for improved visual presentation
+- ⚡ **NEW**: Graceful signal handling (Ctrl+C) for safe operation interruption
+- 📖 **NEW**: Improved help text formatting and command examples
+- 🎯 **NEW**: Enhanced error messages and user feedback
 
 ## Installation
 
@@ -54,6 +58,27 @@ make test
 make build-all
 ```
 
+## Enhanced CLI Experience
+
+This tool now features **Charmbracelet Fang integration** for an enhanced command-line experience:
+
+### Visual Enhancements
+- **Improved Help Text**: Better formatted help output with clear sections and examples
+- **Enhanced Command Examples**: Multi-line examples with proper formatting and syntax highlighting
+- **Better Error Messages**: Clear, styled error messages with helpful suggestions
+- **Consistent Styling**: Professional appearance across all commands and outputs
+
+### Signal Handling
+- **Graceful Interruption**: Press `Ctrl+C` to safely stop long-running operations
+- **Clean Shutdown**: Proper cleanup and resource management when interrupted
+- **Context Cancellation**: Operations respond immediately to interruption signals
+- **Safe Exit**: No data corruption or hanging processes when stopping operations
+
+### Interactive Features
+- **Enhanced Progress Display**: Better visual feedback during wallet generation
+- **Improved Statistics**: Clearer presentation of difficulty analysis and benchmarks
+- **User-Friendly Prompts**: Better guidance for complex operations
+
 ## Usage
 
 ### Basic Commands
@@ -70,13 +95,13 @@ make build-all
 # Generate a wallet with both prefix and suffix
 ./bloco-eth --prefix abc --suffix 123
 
-# Generate 5 wallets with prefix 'dead'
+# Generate 5 wallets with prefix 'dead' (4 chars - use with caution!)
 ./bloco-eth --prefix dead --count 5
 
-# Generate with checksum validation (case-sensitive)
+# Generate with checksum validation (case-sensitive) - use shorter patterns
 ./bloco-eth --prefix DeaD --checksum
 
-# Show detailed progress during generation
+# Show detailed progress during generation (4 chars max recommended)
 ./bloco-eth --prefix abcd --progress --count 5
 
 # NEW: Use specific number of threads for parallel processing
@@ -95,8 +120,8 @@ make build-all
 # Analyze with checksum validation
 ./bloco-eth stats --prefix DeAdBeEf --checksum
 
-# Check difficulty for just a prefix
-./bloco-eth stats --prefix deadbeef
+# Check difficulty for just a prefix (safe length)
+./bloco-eth stats --prefix dead
 ```
 
 #### Performance Benchmarking
@@ -149,6 +174,83 @@ make build-all
 | `--threads` | `-t` | Number of threads to use (0 = auto-detect all CPUs) | 0 |
 
 ## Examples and Output
+
+### Enhanced Help Text
+
+The Fang integration provides beautifully formatted help text:
+
+```bash
+./bloco-eth --help
+```
+
+Output shows enhanced formatting with clear sections:
+```
+  A high-performance CLI tool for generating Ethereum bloco wallets with custom                                         
+  prefix and suffix patterns.                                                                                           
+                                                                                                                        
+  This tool generates Ethereum wallets where the address starts with a specific prefix                                  
+  and/or ends with a specific suffix. It supports EIP-55 checksum validation for more                                   
+  secure bloco addresses and provides detailed statistics and progress information.                                     
+                                                                                                                        
+  Features:                                                                                                             
+    • Multi-threaded parallel processing for optimal performance                                                        
+    • Real-time progress tracking with speed metrics                                                                    
+    • EIP-55 checksum validation support                                                                                
+    • Difficulty analysis and time estimation                                                                           
+    • Cross-platform support (Linux, Windows, macOS)                                                                    
+    • Comprehensive benchmarking and statistics                                                                         
+                                                                                                                        
+  Pattern Format:                                                                                                       
+    • Prefix: hex characters that the address must start with                                                           
+    • Suffix: hex characters that the address must end with                                                             
+    • Valid hex: 0-9, a-f, A-F (case matters for checksum validation)                                                   
+    • Maximum combined length: 40 characters (full address length)                                                      
+         
+  USAGE  
+         
+    bloco-eth [command] [--flags]                                
+                                                                 
+  EXAMPLES  
+            
+    # Generate a single wallet with prefix 'abc'                 
+    bloco-eth --prefix abc                                       
+                                                                 
+    # Generate 5 wallets with prefix 'dead' and suffix 'beef'    
+    bloco-eth --prefix dead --suffix beef --count 5              
+                                                                 
+    # Generate with checksum validation (case-sensitive)         
+    bloco-eth --prefix DeAdBeEf --checksum --count 1             
+                                                                 
+    # Show progress for moderate difficulty generation                  
+    bloco-eth --prefix abcd --progress                         
+                                                                 
+    # Use specific number of threads                             
+    bloco-eth --prefix abc --threads 8                           
+                                                                 
+    # Generate multiple wallets with progress tracking           
+    bloco-eth --prefix cafe --count 3 --progress  
+                                                                 
+    # Complex pattern with checksum (use short patterns!)                              
+    bloco-eth --prefix 1337 --checksum --progress  
+```
+
+### Signal Handling Demo
+
+The application now supports graceful interruption:
+
+```bash
+# Start a moderately long operation (safe for testing)
+./bloco-eth --prefix abcd --count 5 --progress
+
+# Press Ctrl+C to gracefully stop
+# The application will:
+# 1. Immediately respond to the signal
+# 2. Clean up resources properly
+# 3. Display current progress before exiting
+# 4. Exit with proper status code
+```
+
+⚠️ **Important**: Never use prefixes longer than 4 characters for testing signal handling, as they may take hours or days to complete!
 
 ### Generate a Simple Bloco Wallet
 
@@ -235,6 +337,40 @@ Output:
 💡 Recommendations:
    • 💀 Extremely Hard - May take days/weeks/years
 ═══════════════════════════════════════════════════════════════
+```
+
+### Enhanced Benchmark Command
+
+The benchmark command now features improved help text and examples:
+
+```bash
+./bloco-eth benchmark --help
+```
+
+Shows comprehensive examples and usage patterns:
+```
+  EXAMPLES  
+            
+    # Basic benchmark with default pattern 'abc'                            
+    bloco-eth benchmark                                                     
+                                                                            
+    # Benchmark with specific number of attempts                            
+    bloco-eth benchmark --attempts 50000                                    
+                                                                            
+    # Benchmark with custom pattern (safe length)                                         
+    bloco-eth benchmark --pattern dead --attempts 25000                 
+                                                                            
+    # Benchmark with checksum validation (more CPU intensive)               
+    bloco-eth benchmark --pattern AbCdEf --checksum --attempts 10000        
+                                                                            
+    # Benchmark with specific thread count                                  
+    bloco-eth benchmark --threads 8 --attempts 20000                        
+                                                                            
+    # Compare performance across different thread counts                    
+    bloco-eth benchmark --compare-threads --attempts 15000                  
+                                                                            
+    # Intensive benchmark for performance analysis                          
+    bloco-eth benchmark --pattern cafe --attempts 100000 --compare-threads  
 ```
 
 ### Performance Benchmark
@@ -360,20 +496,76 @@ The difficulty of finding a bloco address increases exponentially with the lengt
 
 ### Performance Tips
 
-1. **Use shorter prefixes/suffixes** for faster generation
-2. **Disable checksum validation** for better performance (use `--checksum` only when needed)
-3. **Use progress flag** (`--progress`) for long-running generations to see real-time metrics
-4. **Leverage multi-threading** with `--threads` flag (auto-detects CPU cores by default)
-5. **Optimal thread count** is usually equal to your CPU core count (auto-detected)
-6. **For very difficult patterns**, multi-threading provides near-linear speedup (up to 8x)
-7. **Monitor thread efficiency** in benchmark results to optimize performance
-8. **Object pooling** significantly reduces memory allocations and improves performance
-9. **For maximum performance**, run on machines with higher core counts
-10. **Thread efficiency** typically remains above 90% for most workloads
-11. **Use benchmark command** to test optimal thread count for your system
-12. **Memory optimization** through object pools reduces GC pressure by ~70%
-13. **Peak performance** is typically achieved with thread count = CPU cores
-14. **Scalability analysis** shows theoretical limits based on Amdahl's Law
+1. **⚠️ CRITICAL: Never use prefixes longer than 4 characters** - they can take days/weeks/years to complete
+2. **Use shorter prefixes/suffixes** for faster generation (1-3 characters are ideal for testing)
+3. **Disable checksum validation** for better performance (use `--checksum` only when needed)
+4. **Use progress flag** (`--progress`) for moderate difficulty generations to see real-time metrics
+5. **Leverage multi-threading** with `--threads` flag (auto-detects CPU cores by default)
+6. **Optimal thread count** is usually equal to your CPU core count (auto-detected)
+7. **For very difficult patterns**, multi-threading provides near-linear speedup (up to 8x)
+8. **Monitor thread efficiency** in benchmark results to optimize performance
+9. **Object pooling** significantly reduces memory allocations and improves performance
+10. **For maximum performance**, run on machines with higher core counts
+11. **Thread efficiency** typically remains above 90% for most workloads
+12. **Use benchmark command** to test optimal thread count for your system
+13. **Memory optimization** through object pools reduces GC pressure by ~70%
+14. **Peak performance** is typically achieved with thread count = CPU cores
+15. **Scalability analysis** shows theoretical limits based on Amdahl's Law
+
+### Safe Pattern Length Guidelines
+
+| Pattern Length | Difficulty Level | Typical Time | Recommendation |
+|----------------|------------------|--------------|----------------|
+| 1-2 characters | Easy | Seconds | ✅ Perfect for testing |
+| 3 characters | Moderate | Minutes | ✅ Good for development |
+| 4 characters | Hard | Hours | ⚠️ Use with caution |
+| 5+ characters | Extreme | Days/Weeks/Years | ❌ **AVOID** - Impractical |
+
+### Enhanced Error Handling
+
+The Fang integration provides improved error messages and user guidance:
+
+```bash
+# Invalid input example
+./bloco-eth
+```
+
+Output:
+```
+❌ Error: At least one of --prefix or --suffix must be specified
+💡 Use --help for usage examples
+```
+
+```bash
+# Invalid hex characters
+./bloco-eth --prefix xyz123
+```
+
+Output:
+```
+❌ Error: Invalid hex character in prefix: 'x'
+💡 Valid hex characters: 0-9, a-f, A-F
+```
+
+### Signal Handling Examples
+
+Test graceful interruption with these **safe** commands:
+
+```bash
+# Moderate difficulty wallet generation (press Ctrl+C to test)
+./bloco-eth --prefix abcd --count 5 --progress
+
+# Long-running benchmark (press Ctrl+C to test)  
+./bloco-eth benchmark --attempts 50000 --pattern abc
+
+# The application will:
+# - Respond immediately to Ctrl+C
+# - Display current progress
+# - Clean up resources properly
+# - Exit with appropriate status code
+```
+
+⚠️ **Critical Warning**: Never use prefixes longer than 4 characters for signal handling tests! Patterns like `abcdef` can take days or weeks to complete.
 
 ### Security Considerations
 
@@ -381,6 +573,8 @@ The difficulty of finding a bloco address increases exponentially with the lengt
 - ✅ Implements proper secp256k1 elliptic curve cryptography
 - ✅ Supports EIP-55 checksum validation
 - ✅ Private keys are generated using `crypto/rand`
+- ✅ **NEW**: Graceful signal handling prevents data corruption
+- ✅ **NEW**: Proper resource cleanup on interruption
 - ⚠️ **Always verify generated addresses before use**
 - ⚠️ **Keep private keys secure and never share them**
 
@@ -474,12 +668,14 @@ func handleGenerateWallet(w http.ResponseWriter, r *http.Request) {
 ## Dependencies
 
 - **github.com/spf13/cobra**: CLI framework for command structure
+- **github.com/charmbracelet/fang**: Enhanced CLI experience and signal handling
 - **github.com/ethereum/go-ethereum/crypto**: Ethereum cryptographic functions
 - **golang.org/x/crypto/sha3**: Keccak-256 hashing implementation
 - **crypto/rand**: Secure random number generation
 - **hash**: Standard library interface for hash functions (used in object pooling)
 - **sync**: Standard library for thread synchronization and object pooling
 - **runtime**: Standard library for CPU detection and system information
+- **context**: Standard library for cancellation and signal handling
 
 ## Testing Status
 
@@ -547,8 +743,30 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 Monitor generation performance using the built-in statistics:
 
 ```bash
-# Long-running generation with progress
-./bloco-eth --prefix abcdef --progress --count 1
+# Safe moderate difficulty generation with progress
+./bloco-eth --prefix abcd --progress --count 1
 ```
 
-For extremely long patterns, consider running on high-performance hardware or implementing distributed generation.
+⚠️ **Never use patterns longer than 4 characters** - they are impractical and can take days/weeks/years to complete, even on high-performance hardware.
+
+### Fang Integration Issues
+
+If you experience issues with the enhanced CLI features:
+
+1. **Help text not displaying properly**
+   - Ensure your terminal supports ANSI colors and formatting
+   - Try running in a different terminal emulator
+
+2. **Signal handling not working**
+   - Fang automatically handles `SIGINT` (Ctrl+C) and `SIGKILL`
+   - The application should respond immediately to interruption signals
+   - If hanging, check for terminal compatibility issues
+
+3. **Enhanced formatting issues**
+   - The application gracefully degrades if Fang features are unavailable
+   - Core functionality remains intact even if visual enhancements fail
+
+4. **Build issues with Fang dependency**
+   - Ensure Go 1.21+ is installed
+   - Run `go mod tidy` to resolve the Fang dependency
+   - Check that `github.com/charmbracelet/fang` is accessible

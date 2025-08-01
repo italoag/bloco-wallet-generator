@@ -30,6 +30,15 @@ make dev
 
 # CI workflow (deps, format, vet, race tests)
 make ci
+
+# Additional useful commands
+make clean      # Clean build artifacts
+make install    # Install to GOPATH/bin
+make lint       # Lint code (requires golangci-lint)
+make security   # Security checks (requires gosec)
+make demo       # Run comprehensive demo
+make examples   # Run usage examples
+make stats-test # Test statistics functionality
 ```
 
 ### Application Usage
@@ -56,6 +65,8 @@ make ci
    - `Worker` (worker.go): Individual worker thread with dedicated crypto resources
    - `StatsManager` (stats_manager.go): Thread-safe statistics aggregation across workers
    - `ProgressManager` (progress_manager.go): Real-time progress display management
+   - `ThreadMetrics` (thread_metrics.go): Thread performance monitoring and efficiency calculations
+   - `ThreadValidation` (thread_validation.go): Thread count validation and CPU detection
 
 2. **Object Pooling System**
    - `CryptoPool`: Reuses cryptographic structures (private keys, ECDSA keys, big.Int)
@@ -63,13 +74,20 @@ make ci
    - `BufferPool`: Reuses byte buffers and string builders
    - All pools implement secure cleanup of sensitive data
 
-3. **Core Generation Logic**
+3. **Terminal User Interface (TUI) System**
+   - `TUIManager` (tui/manager.go): Terminal capability detection and TUI coordination
+   - `ProgressDisplay` (tui/progress.go): Advanced progress visualization with Bubble Tea
+   - `StatsDisplay` (tui/stats.go): Real-time statistics rendering with styling
+   - `Styles` (tui/styles.go): Consistent visual theming and color schemes
+   - `Utils` (tui/utils.go): TUI utility functions and helpers
+
+4. **Core Generation Logic**
    - `generateBlocoWallet()`: Main wallet generation with statistics
    - `privateToAddress()`: Optimized private key to address conversion using pools
    - `isValidBlocoAddress()`: Pattern matching with checksum validation
    - `toChecksumAddress()`: EIP-55 checksum formatting
 
-4. **Statistics and Analysis**
+5. **Statistics and Analysis**
    - `computeDifficulty()`: Calculates generation difficulty based on pattern length and checksum
    - `computeProbability()`: Probability calculations for success estimates
    - `Statistics` struct: Real-time progress tracking with ETA calculations
@@ -81,6 +99,9 @@ make ci
 - `worker.go`: Individual worker thread implementation  
 - `stats_manager.go`: Thread-safe statistics aggregation
 - `progress_manager.go`: Progress display management
+- `thread_metrics.go`: Thread performance monitoring
+- `thread_validation.go`: Thread count validation
+- `tui/`: Terminal User Interface components with Bubble Tea integration
 - `*_test.go`: Comprehensive test suite for all components
 
 ## Technical Details
@@ -90,6 +111,8 @@ make ci
 - `github.com/ethereum/go-ethereum/crypto`: Ethereum cryptographic functions
 - `golang.org/x/crypto/sha3`: Keccak-256 hashing
 - `crypto/rand`: Secure random number generation
+- `github.com/charmbracelet/bubbletea`: Terminal User Interface framework
+- `golang.org/x/term`: Terminal capability detection
 
 ### Performance Optimizations
 - **Multi-threading**: Linear scaling with CPU cores (up to 8x performance improvement)
@@ -110,6 +133,8 @@ make ci
 - **Integration Tests**: End-to-end wallet generation (worker_test.go)
 - **Performance Tests**: Multi-threading efficiency (pool_test.go)
 - **Statistics Tests**: Progress and metrics accuracy (stats_manager_test.go, progress_manager_test.go)
+- **TUI Tests**: Terminal interface components (tui/*_test.go)
+- **Thread Tests**: Metrics and validation testing (thread_*_test.go)
 
 ### Running Tests
 ```bash
@@ -124,6 +149,11 @@ make test-coverage
 
 # Run benchmarks
 make bench
+
+# Run specific test categories
+make test-unit      # Unit tests only
+make perf-test      # Performance testing
+make benchmark-test # Benchmark testing
 ```
 
 ## Security Considerations
@@ -153,6 +183,13 @@ make bench
 - Implement worker-local resources to avoid contention
 - Use channels for thread-safe communication
 - Profile with `go tool pprof` when making performance changes
+
+### Working with TUI Components
+- TUI system automatically detects terminal capabilities
+- Use `TUIManager` for capability detection and coordination
+- Styling is centralized in `tui/styles.go` for consistency
+- All TUI components are fully tested with mock terminal support
+- Graceful fallback to basic text output when TUI is not supported
 
 ## Building and Deployment
 

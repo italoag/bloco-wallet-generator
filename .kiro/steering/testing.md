@@ -1,3 +1,7 @@
+---
+inclusion: always
+---
+
 # Testing Guidelines
 
 ## Core Testing Principles
@@ -14,6 +18,7 @@
 5. **Performance Validation**: Run benchmarks if performance-critical code is modified
 
 ## Required Test Commands
+
 ```bash
 # Basic test suite
 make test
