@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -75,6 +76,14 @@ func (wp *WorkerPool) CollectStats(statsManager *StatsManager) {
 
 // Shutdown gracefully shuts down all workers
 func (wp *WorkerPool) Shutdown() {
+	// Check if already shutdown
+	select {
+	case <-wp.shutdownChan:
+		// Already shutdown
+		return
+	default:
+	}
+
 	// Create a channel to signal when shutdown is complete
 	done := make(chan struct{})
 
@@ -133,6 +142,13 @@ func (wp *WorkerPool) DistributeWork(prefix, suffix string, isChecksum bool, bat
 
 // GenerateWallet generates a wallet using the worker pool
 func (wp *WorkerPool) GenerateWallet(prefix, suffix string, isChecksum bool, statsManager *StatsManager) (*Wallet, int64) {
+	// Use background context for backward compatibility
+	ctx := context.Background()
+	return wp.GenerateWalletWithContext(ctx, prefix, suffix, isChecksum, statsManager)
+}
+
+// GenerateWalletWithContext generates a wallet using the worker pool with context cancellation support
+func (wp *WorkerPool) GenerateWalletWithContext(ctx context.Context, prefix, suffix string, isChecksum bool, statsManager *StatsManager) (*Wallet, int64) {
 	// Start collecting stats
 	wp.CollectStats(statsManager)
 
@@ -160,6 +176,8 @@ func (wp *WorkerPool) GenerateWallet(prefix, suffix string, isChecksum bool, sta
 				return
 			case <-matchFound:
 				return
+			case <-ctx.Done():
+				return
 			case <-ticker.C:
 				// Check if we need to distribute more work
 				// Only distribute more work if the channel isn't full
@@ -179,6 +197,8 @@ func (wp *WorkerPool) GenerateWallet(prefix, suffix string, isChecksum bool, sta
 				return
 			case <-matchFound:
 				return
+			case <-ctx.Done():
+				return
 			case result, ok := <-wp.resultChan:
 				if !ok {
 					return
@@ -190,6 +210,8 @@ func (wp *WorkerPool) GenerateWallet(prefix, suffix string, isChecksum bool, sta
 					return
 				case <-wp.shutdownChan:
 					return
+				case <-ctx.Done():
+					return
 				}
 			}
 		}
@@ -200,6 +222,8 @@ func (wp *WorkerPool) GenerateWallet(prefix, suffix string, isChecksum bool, sta
 		for {
 			select {
 			case <-wp.shutdownChan:
+				return
+			case <-ctx.Done():
 				return
 			case result, ok := <-resultChan:
 				if !ok {
@@ -218,10 +242,13 @@ func (wp *WorkerPool) GenerateWallet(prefix, suffix string, isChecksum bool, sta
 		}
 	}()
 
-	// Wait for a match to be found with timeout
+	// Wait for a match to be found, timeout, or context cancellation
 	select {
 	case <-matchFound:
 		// Match found, continue to shutdown
+	case <-ctx.Done():
+		// Context cancelled
+		close(matchFound)
 	case <-time.After(24 * time.Hour):
 		// Timeout after 24 hours (should never happen in practice)
 		close(matchFound)

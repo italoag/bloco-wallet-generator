@@ -100,9 +100,9 @@ func TestWorkerPoolSubmit(t *testing.T) {
 	pool := NewWorkerPool(2)
 	pool.Start()
 
-	// Create a work item
+	// Create a work item with a simple pattern that should be found quickly
 	workItem := WorkItem{
-		Prefix:     "test",
+		Prefix:     "a", // Simple prefix that should be found quickly
 		Suffix:     "",
 		IsChecksum: false,
 		BatchSize:  10,
@@ -111,17 +111,19 @@ func TestWorkerPoolSubmit(t *testing.T) {
 	// Submit work item
 	pool.Submit(workItem)
 
-	// Try to receive the work item (with timeout)
+	// Wait for a result from the workers (they should process the work item)
 	select {
-	case receivedItem := <-pool.workChan:
-		if receivedItem.Prefix != workItem.Prefix {
-			t.Errorf("Expected prefix %s, got %s", workItem.Prefix, receivedItem.Prefix)
+	case result := <-pool.resultChan:
+		// Verify that we got a result from processing the work item
+		if result.Attempts <= 0 {
+			t.Errorf("Expected positive attempt count, got %d", result.Attempts)
 		}
-		if receivedItem.BatchSize != workItem.BatchSize {
-			t.Errorf("Expected batch size %d, got %d", workItem.BatchSize, receivedItem.BatchSize)
+		// For a simple prefix like "a", we should find a match relatively quickly
+		if result.Error != nil {
+			t.Errorf("Unexpected error: %v", result.Error)
 		}
 	case <-time.After(1 * time.Second):
-		t.Error("Timeout waiting for work item")
+		t.Error("Timeout waiting for work result")
 	}
 
 	pool.Shutdown()

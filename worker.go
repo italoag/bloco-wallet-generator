@@ -85,24 +85,13 @@ func (w *Worker) Start() {
 					lastStatsUpdate = now
 				}
 
-				// Send result (always try to send, even if not found for stats purposes)
-				if result.Found {
-					// This is a critical result, so we'll block until we can send it
-					select {
-					case w.resultChan <- result:
-						// Result sent successfully
-					case <-w.shutdownChan:
-						// Shutdown signal received, exit
-						return
-					}
-				} else {
-					// For non-matching results, use non-blocking send
-					select {
-					case w.resultChan <- result:
-						// Result sent successfully
-					default:
-						// Channel is full, skip this update
-					}
+				// Send result (always send results to maintain work item count)
+				select {
+				case w.resultChan <- result:
+					// Result sent successfully
+				case <-w.shutdownChan:
+					// Shutdown signal received, exit
+					return
 				}
 
 			case <-w.shutdownChan:

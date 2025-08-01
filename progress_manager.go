@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -26,7 +27,7 @@ type ProgressManager struct {
 	shutdownChan    chan struct{}
 	updateInterval  time.Duration
 	lastDisplayTime time.Time
-	isActive        bool
+	isActive        int32 // Use atomic for thread-safe access
 
 	// Thread-safe progress aggregation
 	aggregatedStats AggregatedStats
@@ -40,7 +41,7 @@ func NewProgressManager(stats *Statistics, statsManager *StatsManager) *Progress
 		shutdownChan:    make(chan struct{}),
 		updateInterval:  ProgressUpdateInterval,
 		lastDisplayTime: time.Now(),
-		isActive:        false,
+		isActive:        0, // 0 = false, 1 = true
 		aggregatedStats: AggregatedStats{
 			LastUpdate: time.Now(),
 		},
@@ -49,28 +50,25 @@ func NewProgressManager(stats *Statistics, statsManager *StatsManager) *Progress
 
 // Start begins the progress display loop
 func (pm *ProgressManager) Start() {
-	pm.mu.Lock()
-	if pm.isActive {
-		pm.mu.Unlock()
-		return
+	// Use atomic compare-and-swap to ensure only one goroutine starts
+	if !atomic.CompareAndSwapInt32(&pm.isActive, 0, 1) {
+		return // Already active
 	}
-	pm.isActive = true
-	pm.mu.Unlock()
 
 	go pm.displayLoop()
 }
 
 // Stop terminates the progress display loop
 func (pm *ProgressManager) Stop() {
+	// Use atomic compare-and-swap to ensure only one goroutine stops
+	if !atomic.CompareAndSwapInt32(&pm.isActive, 1, 0) {
+		return // Already stopped
+	}
+
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	if !pm.isActive {
-		return
-	}
-
 	close(pm.shutdownChan)
-	pm.isActive = false
 
 	// Create a new shutdown channel for future use
 	pm.shutdownChan = make(chan struct{})
@@ -85,38 +83,44 @@ func (pm *ProgressManager) UpdateInterval(interval time.Duration) {
 
 // ForceUpdate forces an immediate progress update
 func (pm *ProgressManager) ForceUpdate() {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	if !pm.isActive {
+	if atomic.LoadInt32(&pm.isActive) == 0 {
 		return
 	}
+
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 
 	pm.updateProgressDisplay()
 }
 
 // displayLoop runs the progress display loop with enhanced thread safety
 func (pm *ProgressManager) displayLoop() {
-	ticker := time.NewTicker(pm.updateInterval)
+	// Get the initial update interval and shutdown channel under lock
+	pm.mu.RLock()
+	updateInterval := pm.updateInterval
+	shutdownChan := pm.shutdownChan
+	pm.mu.RUnlock()
+
+	ticker := time.NewTicker(updateInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			// Use read-write lock for better concurrency
-			pm.mu.Lock()
-			if pm.isActive {
+			// Check if still active using atomic load
+			if atomic.LoadInt32(&pm.isActive) == 1 {
+				pm.mu.Lock()
 				pm.updateProgressDisplay()
+				pm.mu.Unlock()
 			}
-			pm.mu.Unlock()
 
-		case <-pm.shutdownChan:
+		case <-shutdownChan:
 			// Final update before exiting
-			pm.mu.Lock()
-			if pm.isActive {
+			if atomic.LoadInt32(&pm.isActive) == 1 {
+				pm.mu.Lock()
 				pm.updateProgressDisplay()
+				pm.mu.Unlock()
 			}
-			pm.mu.Unlock()
 			return
 		}
 	}
@@ -260,9 +264,7 @@ func (pm *ProgressManager) GetAggregatedStats() AggregatedStats {
 
 // IsActive returns whether the progress manager is currently active
 func (pm *ProgressManager) IsActive() bool {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
-	return pm.isActive
+	return atomic.LoadInt32(&pm.isActive) == 1
 }
 
 // GetLastDisplayTime returns the time of the last progress display update

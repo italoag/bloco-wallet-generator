@@ -879,6 +879,13 @@ func toChecksumAddress(address string) string {
 
 // generateBlocoWallet generates a wallet that matches the given constraints with statistics
 func generateBlocoWallet(prefix, suffix string, isChecksum bool, showProgress bool) *WalletResult {
+	// Use background context for backward compatibility
+	ctx := context.Background()
+	return generateBlocoWalletWithContext(ctx, prefix, suffix, isChecksum, showProgress)
+}
+
+// generateBlocoWalletWithContext generates a wallet that matches the given constraints with context cancellation support
+func generateBlocoWalletWithContext(ctx context.Context, prefix, suffix string, isChecksum bool, showProgress bool) *WalletResult {
 	pre := prefix
 	suf := suffix
 
@@ -889,7 +896,7 @@ func generateBlocoWallet(prefix, suffix string, isChecksum bool, showProgress bo
 
 	// For testing or simple cases, use single-threaded generation
 	if !showProgress || threads <= 1 {
-		return generateBlocoWalletSingleThread(pre, suf, isChecksum, showProgress)
+		return generateBlocoWalletSingleThreadWithContext(ctx, pre, suf, isChecksum, showProgress)
 	}
 
 	// Initialize statistics
@@ -917,8 +924,8 @@ func generateBlocoWallet(prefix, suffix string, isChecksum bool, showProgress bo
 		go displayProgressParallel(stats, statsManager, workerPool.shutdownChan)
 	}
 
-	// Generate wallet using the worker pool
-	wallet, attempts := workerPool.GenerateWallet(pre, suf, isChecksum, statsManager)
+	// Generate wallet using the worker pool with context
+	wallet, attempts := workerPool.GenerateWalletWithContext(ctx, pre, suf, isChecksum, statsManager)
 
 	// Final progress update
 	if showProgress {
@@ -952,6 +959,13 @@ func generateBlocoWallet(prefix, suffix string, isChecksum bool, showProgress bo
 
 // generateBlocoWalletSingleThread generates a wallet using a simple single-threaded approach
 func generateBlocoWalletSingleThread(prefix, suffix string, isChecksum bool, showProgress bool) *WalletResult {
+	// Use background context for backward compatibility
+	ctx := context.Background()
+	return generateBlocoWalletSingleThreadWithContext(ctx, prefix, suffix, isChecksum, showProgress)
+}
+
+// generateBlocoWalletSingleThreadWithContext generates a wallet using a simple single-threaded approach with context cancellation
+func generateBlocoWalletSingleThreadWithContext(ctx context.Context, prefix, suffix string, isChecksum bool, showProgress bool) *WalletResult {
 	var attempts int = 0
 	var stats *Statistics
 
@@ -966,6 +980,22 @@ func generateBlocoWalletSingleThread(prefix, suffix string, isChecksum bool, sho
 	lastProgressUpdate := time.Now()
 
 	for {
+		// Check for context cancellation every 100 attempts to avoid excessive overhead
+		if attempts%100 == 0 {
+			select {
+			case <-ctx.Done():
+				if showProgress {
+					fmt.Printf("\n🛑 Generation cancelled after %s attempts\n", formatNumber(int64(attempts)))
+					fmt.Printf("Reason: %v\n", ctx.Err())
+				}
+				return &WalletResult{
+					Error:    fmt.Sprintf("Generation cancelled: %v", ctx.Err()),
+					Attempts: attempts,
+				}
+			default:
+			}
+		}
+
 		attempts++
 
 		// Generate a random wallet
@@ -1008,6 +1038,13 @@ func generateBlocoWalletSingleThread(prefix, suffix string, isChecksum bool, sho
 
 // runQuickSingleThreadBenchmark runs a quick benchmark with a single thread to establish baseline performance
 func runQuickSingleThreadBenchmark(pattern string, isChecksum bool) float64 {
+	// Use background context for backward compatibility
+	ctx := context.Background()
+	return runQuickSingleThreadBenchmarkWithContext(ctx, pattern, isChecksum)
+}
+
+// runQuickSingleThreadBenchmarkWithContext runs a quick benchmark with context cancellation support
+func runQuickSingleThreadBenchmarkWithContext(ctx context.Context, pattern string, isChecksum bool) float64 {
 	fmt.Printf("🔍 Running quick single-thread benchmark for baseline...\n")
 
 	// Save original thread count and temporarily set to 1
@@ -1052,6 +1089,19 @@ func runQuickSingleThreadBenchmark(pattern string, isChecksum bool) float64 {
 
 	for {
 		select {
+		case <-ctx.Done():
+			// Context cancelled, return a reasonable estimate
+			attempts := statsManager.GetTotalAttempts()
+			if attempts > 0 {
+				duration := time.Since(startTime)
+				speed := float64(attempts) / duration.Seconds()
+				workerPool.Shutdown()
+				threads = originalThreads
+				return speed
+			}
+			workerPool.Shutdown()
+			threads = originalThreads
+			return 1000 // Default fallback speed
 		case <-ticker.C:
 			now := time.Now()
 			attempts := statsManager.GetTotalAttempts()
@@ -1112,12 +1162,32 @@ func runQuickSingleThreadBenchmark(pattern string, isChecksum bool) float64 {
 
 			fmt.Printf("⚠️ Single-thread benchmark timed out, using estimate: %.0f addr/s\n", speed)
 			return speed
+		case <-ctx.Done():
+			// Context cancelled
+			attempts := statsManager.GetTotalAttempts()
+			if attempts > 0 {
+				duration := time.Since(startTime)
+				speed := float64(attempts) / duration.Seconds()
+				workerPool.Shutdown()
+				threads = originalThreads
+				return speed
+			}
+			workerPool.Shutdown()
+			threads = originalThreads
+			return 1000 // Default fallback speed
 		}
 	}
 }
 
 // runBenchmark runs a performance benchmark with multi-thread support and scalability analysis
 func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *BenchmarkResult {
+	// Use background context for backward compatibility
+	ctx := context.Background()
+	return runBenchmarkWithContext(ctx, maxAttempts, pattern, isChecksum)
+}
+
+// runBenchmarkWithContext runs a performance benchmark with context cancellation support
+func runBenchmarkWithContext(ctx context.Context, maxAttempts int64, pattern string, isChecksum bool) *BenchmarkResult {
 	if maxAttempts == 0 {
 		maxAttempts = 10000
 	}
@@ -1126,7 +1196,7 @@ func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *Benchmark
 	fmt.Printf("📈 Target: %s attempts | Step size: %d\n", formatNumber(maxAttempts), Step)
 
 	// First run a quick single-thread benchmark to establish baseline
-	singleThreadSpeed := runQuickSingleThreadBenchmark(pattern, isChecksum)
+	singleThreadSpeed := runQuickSingleThreadBenchmarkWithContext(ctx, pattern, isChecksum)
 
 	fmt.Printf("🧵 Using %d worker threads for multi-threaded benchmark\n", threads)
 	fmt.Printf("🔍 Single-thread baseline: %.0f addr/s\n\n", singleThreadSpeed)
@@ -1167,6 +1237,10 @@ func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *Benchmark
 
 		for {
 			select {
+			case <-ctx.Done():
+				fmt.Printf("\n🛑 Benchmark cancelled: %v\n", ctx.Err())
+				close(done)
+				return
 			case <-ticker.C:
 				now := time.Now()
 				currentAttempts := statsManager.GetTotalAttempts()
@@ -1241,6 +1315,10 @@ func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *Benchmark
 
 		for {
 			select {
+			case <-ctx.Done():
+				fmt.Printf("\n🛑 Benchmark cancelled: %v\n", ctx.Err())
+				close(done)
+				return
 			case <-ticker.C:
 				currentAttempts := statsManager.GetTotalAttempts()
 
@@ -1436,26 +1514,49 @@ func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *Benchmark
 	return result
 }
 func generateMultipleWallets(prefix, suffix string, count int, isChecksum, showProgress bool) {
+	// Use background context for backward compatibility
+	ctx := context.Background()
+	generateMultipleWalletsWithContext(ctx, prefix, suffix, count, isChecksum, showProgress)
+}
+
+func generateMultipleWalletsWithContext(ctx context.Context, prefix, suffix string, count int, isChecksum, showProgress bool) []*WalletResult {
 	fmt.Printf("Generating %d bloco wallets with prefix '%s' and suffix '%s'\n", count, prefix, suffix)
 	fmt.Printf("Checksum validation: %t\n", isChecksum)
 	fmt.Println(strings.Repeat("-", 80))
 
 	startTime := time.Now()
 	totalAttempts := 0
+	results := make([]*WalletResult, 0, count)
 
 	for i := 0; i < count; i++ {
+		// Check for cancellation before each wallet generation
+		select {
+		case <-ctx.Done():
+			fmt.Printf("\n🛑 Operation cancelled after generating %d/%d wallets\n", i, count)
+			fmt.Printf("Reason: %v\n", ctx.Err())
+			return results
+		default:
+		}
+
 		fmt.Printf("\nGenerating wallet %d/%d...\n", i+1, count)
 
 		walletStart := time.Now()
-		result := generateBlocoWallet(prefix, suffix, isChecksum, showProgress)
+		result := generateBlocoWalletWithContext(ctx, prefix, suffix, isChecksum, showProgress)
 		walletDuration := time.Since(walletStart)
 
 		if result.Error != "" {
 			fmt.Printf("Error generating wallet %d: %s\n", i+1, result.Error)
+
+			// Check if error is due to cancellation
+			if ctx.Err() != nil {
+				fmt.Printf("🛑 Operation cancelled during wallet %d generation\n", i+1)
+				return results
+			}
 			continue
 		}
 
 		totalAttempts += result.Attempts
+		results = append(results, result)
 
 		fmt.Printf("✓ Wallet %d generated successfully!\n", i+1)
 		fmt.Printf("  Address:     %s\n", result.Wallet.Address)
@@ -1467,10 +1568,14 @@ func generateMultipleWallets(prefix, suffix string, count int, isChecksum, showP
 	totalDuration := time.Since(startTime)
 	fmt.Println(strings.Repeat("-", 80))
 	fmt.Printf("Generation completed!\n")
-	fmt.Printf("Total wallets: %d\n", count)
+	fmt.Printf("Total wallets: %d\n", len(results))
 	fmt.Printf("Total attempts: %d\n", totalAttempts)
 	fmt.Printf("Total time: %v\n", totalDuration)
-	fmt.Printf("Average attempts per wallet: %.2f\n", float64(totalAttempts)/float64(count))
+	if len(results) > 0 {
+		fmt.Printf("Average attempts per wallet: %.2f\n", float64(totalAttempts)/float64(len(results)))
+	}
+
+	return results
 }
 
 var (

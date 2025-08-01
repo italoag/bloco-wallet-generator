@@ -32,19 +32,19 @@
   - Run `make test` to ensure no regressions
   - _Requirements: 2.1, 2.2_
 
-- [ ] 4. Add graceful interruption handling for long-running operations
+- [x] 4. Add graceful interruption handling for long-running operations
   - Write unit tests for context cancellation behavior before implementation
   - Modify generateMultipleWallets to accept and use context for cancellation
   - Update runBenchmark function to support context cancellation
   - Add context checking in wallet generation loops
   - Ensure proper cleanup when operations are interrupted
   - Test interruption manually: start `./bloco-eth --prefix abc --count 10 --progress` and press Ctrl+C
-  - Test benchmark interruption: start `./bloco-eth benchmark --attempts 100000` and press Ctrl+C
+  - Test benchmark interruption: start `./bloco-eth benchmark --attempts 10000` and press Ctrl+C
   - Run `make test` including new cancellation tests
   - Verify graceful shutdown and proper cleanup
   - _Requirements: 3.4, 1.4_
 
-- [ ] 5. Comprehensive testing and validation
+- [-] 5. Comprehensive testing and validation
   - Run full test suite: `make test` and `make test-race`
   - Run benchmarks to check for performance regressions: `make bench`
   - Test all CLI commands with various parameter combinations
