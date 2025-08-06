@@ -2067,13 +2067,59 @@ func generateWalletsDirectly(ctx context.Context, prefix, suffix string, count i
 func generateWalletsInBackground(ctx context.Context, prefix, suffix string, count int, isChecksum bool, walletResultsChan chan WalletResultForTUI, statsUpdateChan chan StatsUpdateForTUI) []*WalletResult {
 	results := make([]*WalletResult, 0, count)
 	
-	// Track statistics for updates
+	// Track statistics for updates with mutex for thread safety
 	startTime := time.Now()
-	totalAttempts := int64(0)
-	completedWallets := 0
+	var totalAttempts int64
+	var completedWallets int
+	var statsMutex sync.Mutex
 	
 	// Create stats for difficulty calculation
 	stats := newStatistics(prefix, suffix, isChecksum)
+	
+	// Function to send stats update
+	sendStatsUpdate := func() {
+		if statsUpdateChan != nil {
+			statsMutex.Lock()
+			currentAttempts := totalAttempts
+			currentCompleted := completedWallets
+			statsMutex.Unlock()
+			
+			elapsed := time.Since(startTime)
+			speed := float64(currentAttempts) / elapsed.Seconds()
+			
+			// Calculate progress as percentage of wallets completed
+			progressPercent := (float64(currentCompleted) / float64(count)) * 100.0
+			
+			// Calculate probability differently: how far we are in the expected attempts
+			probability := progressPercent // Progress is the real probability of completion
+			
+			// Calculate ETA based on remaining wallets and current speed
+			remaining := count - currentCompleted
+			var eta time.Duration
+			if remaining > 0 && speed > 0 {
+				// Estimate remaining attempts based on average so far
+				var avgAttemptsPerWallet float64
+				if currentCompleted > 0 {
+					avgAttemptsPerWallet = float64(currentAttempts) / float64(currentCompleted)
+				} else {
+					avgAttemptsPerWallet = float64(stats.Probability50)
+				}
+				
+				estimatedRemainingAttempts := float64(remaining) * avgAttemptsPerWallet
+				eta = time.Duration(estimatedRemainingAttempts/speed) * time.Second
+			}
+			
+			statsUpdateChan <- StatsUpdateForTUI{
+				Attempts:         currentAttempts,
+				Speed:            speed,
+				Probability:      probability,
+				ETA:              eta,
+				CompletedWallets: currentCompleted,
+				TotalWallets:     count,
+				ProgressPercent:  progressPercent,
+			}
+		}
+	}
 	
 	// Send periodic stats updates
 	statsUpdateTicker := time.NewTicker(500 * time.Millisecond)
@@ -2085,42 +2131,7 @@ func generateWalletsInBackground(ctx context.Context, prefix, suffix string, cou
 			case <-ctx.Done():
 				return
 			case <-statsUpdateTicker.C:
-				if statsUpdateChan != nil {
-					elapsed := time.Since(startTime)
-					speed := float64(totalAttempts) / elapsed.Seconds()
-					
-					// Calculate progress as percentage of wallets completed
-					progressPercent := (float64(completedWallets) / float64(count)) * 100.0
-					
-					// Calculate probability differently: how far we are in the expected attempts
-					probability := progressPercent // Progress is the real probability of completion
-					
-					// Calculate ETA based on remaining wallets and current speed
-					remaining := count - completedWallets
-					var eta time.Duration
-					if remaining > 0 && speed > 0 {
-						// Estimate remaining attempts based on average so far
-						var avgAttemptsPerWallet float64
-						if completedWallets > 0 {
-							avgAttemptsPerWallet = float64(totalAttempts) / float64(completedWallets)
-						} else {
-							avgAttemptsPerWallet = float64(stats.Probability50)
-						}
-						
-						estimatedRemainingAttempts := float64(remaining) * avgAttemptsPerWallet
-						eta = time.Duration(estimatedRemainingAttempts/speed) * time.Second
-					}
-					
-					statsUpdateChan <- StatsUpdateForTUI{
-						Attempts:         totalAttempts,
-						Speed:            speed,
-						Probability:      probability,
-						ETA:              eta,
-						CompletedWallets: completedWallets,
-						TotalWallets:     count,
-						ProgressPercent:  progressPercent,
-					}
-				}
+				sendStatsUpdate()
 			}
 		}
 	}()
