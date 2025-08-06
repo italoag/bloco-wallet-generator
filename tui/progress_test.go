@@ -123,8 +123,8 @@ func TestProgressModel_Update_KeyMsg(t *testing.T) {
 	}{
 		{"Ctrl+C", "ctrl+c", true},
 		{"Q key", "q", true},
-		{"Escape", "esc", true},
-		{"Other key", "a", true}, // Any key should quit in the new implementation
+		{"Escape", "esc", false}, // Only q and ctrl+c should quit
+		{"Other key", "a", false}, // Other keys should not quit
 	}
 
 	for _, tc := range testCases {
@@ -153,6 +153,9 @@ func TestProgressModel_Update_KeyMsg(t *testing.T) {
 
 			if tc.shouldQuit && cmd == nil {
 				t.Errorf("Expected command for quit key %s", tc.key)
+			}
+			if !tc.shouldQuit && cmd != nil {
+				// For non-quit keys, we might still get a command (like nil command), that's ok
 			}
 		})
 	}

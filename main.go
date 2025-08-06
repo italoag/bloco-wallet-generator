@@ -10,17 +10,28 @@ import (
 	"math"
 	"math/big"
 	"os"
+	"os/signal"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/charmbracelet/fang"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/sha3"
+	
+	tea "github.com/charmbracelet/bubbletea"
+	"bloco-eth/tui"
+)
+
+// Global context for signal handling
+var (
+	globalCtx    context.Context
+	globalCancel context.CancelFunc
 )
 
 // Wallet represents an Ethereum wallet with address and private key
@@ -375,6 +386,18 @@ func (bp *BufferPool) PutHexBuffer(buf []byte) {
 	bp.hexBufferPool.Put(buf)
 }
 
+// setupSignalHandling configures global signal handling for graceful shutdown
+func setupSignalHandling() {
+	globalCtx, globalCancel = context.WithCancel(context.Background())
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Printf("\n🛑 Received interrupt signal, shutting down gracefully...\n")
+		globalCancel()
+	}()
+}
+
 // initializePools initializes the global object pools
 func initializePools() {
 	globalCryptoPool = NewCryptoPool()
@@ -567,19 +590,215 @@ func (s *Statistics) displayProgress() {
 }
 
 // displayProgressParallel shows progress for parallel wallet generation
-func displayProgressParallel(stats *Statistics, statsManager *StatsManager, shutdownChan chan struct{}) {
-	// Create a progress manager for thread-safe updates
+func displayProgressParallel(stats *Statistics, statsManager *StatsManager, shutdownChan chan struct{}, walletResultsChan chan WalletResultForTUI) {
+	// Check if TUI should be used
+	tuiManager := tui.NewTUIManager()
+	if tuiManager.ShouldUseTUI() {
+		displayProgressTUI(stats, statsManager, shutdownChan, walletResultsChan)
+		return
+	}
+
+	// Fallback to text-based progress display
 	progressManager := NewProgressManager(stats, statsManager)
-
-	// Start the progress display loop
 	progressManager.Start()
-
-	// Wait for shutdown signal
 	<-shutdownChan
-
-	// Stop the progress manager
 	progressManager.Stop()
 }
+
+// SilentStatsUpdater updates statistics without displaying progress
+type SilentStatsUpdater struct {
+	stats        *Statistics
+	statsManager *StatsManager
+	ticker       *time.Ticker
+	stopChan     chan struct{}
+	running      bool
+}
+
+// NewSilentStatsUpdater creates a new silent stats updater
+func NewSilentStatsUpdater(stats *Statistics, statsManager *StatsManager) *SilentStatsUpdater {
+	return &SilentStatsUpdater{
+		stats:        stats,
+		statsManager: statsManager,
+		stopChan:     make(chan struct{}),
+	}
+}
+
+// Start begins the silent update process
+func (ssu *SilentStatsUpdater) Start() {
+	if ssu.running {
+		return
+	}
+	
+	ssu.running = true
+	ssu.ticker = time.NewTicker(100 * time.Millisecond)
+	
+	go func() {
+		for {
+			select {
+			case <-ssu.ticker.C:
+				// Update stats with current data from workers
+				metrics := ssu.statsManager.GetMetrics()
+				ssu.stats.Speed = metrics.TotalThroughput
+				ssu.stats.LastUpdate = time.Now()
+			case <-ssu.stopChan:
+				return
+			}
+		}
+	}()
+}
+
+// Stop stops the silent update process
+func (ssu *SilentStatsUpdater) Stop() {
+	if !ssu.running {
+		return
+	}
+	
+	ssu.running = false
+	
+	if ssu.ticker != nil {
+		ssu.ticker.Stop()
+	}
+	
+	close(ssu.stopChan)
+	ssu.stopChan = make(chan struct{}) // Recreate for potential reuse
+}
+
+// StatsManagerAdapter adapts the main StatsManager to the TUI interface
+type StatsManagerAdapter struct {
+	*StatsManager
+}
+
+func (sma *StatsManagerAdapter) GetMetrics() tui.ThreadMetrics {
+	metrics := sma.StatsManager.GetMetrics()
+	return tui.ThreadMetrics{
+		EfficiencyRatio: metrics.EfficiencyRatio,
+		TotalSpeed:      metrics.TotalThroughput,
+		ThreadCount:     metrics.WorkerCount,
+	}
+}
+
+// WalletResultForTUI represents a wallet result that can be sent to TUI
+type WalletResultForTUI struct {
+	Index      int
+	Address    string
+	PrivateKey string
+	Attempts   int
+	Duration   time.Duration
+	Error      string
+}
+
+// StatsUpdateForTUI represents a statistics update message for TUI
+type StatsUpdateForTUI struct {
+	Attempts         int64
+	Speed            float64
+	Probability      float64
+	ETA              time.Duration
+	CompletedWallets int     // Number of wallets successfully generated
+	TotalWallets     int     // Total wallets requested
+	ProgressPercent  float64 // Progress as percentage (0-100)
+}
+
+// displayProgressTUI shows progress using TUI interface with wallet results
+func displayProgressTUI(stats *Statistics, statsManager *StatsManager, shutdownChan chan struct{}, walletResultsChan chan WalletResultForTUI) {
+	// Create TUI statistics interface with initial values
+	tuiStats := &tui.Statistics{
+		Difficulty:      stats.Difficulty,
+		Probability50:   stats.Probability50,
+		CurrentAttempts: stats.CurrentAttempts,
+		Speed:           stats.Speed,
+		Probability:     stats.Probability,
+		EstimatedTime:   stats.EstimatedTime,
+		StartTime:       stats.StartTime,
+		LastUpdate:      stats.LastUpdate,
+		Pattern:         stats.Pattern,
+		IsChecksum:      stats.IsChecksum,
+	}
+
+	// Create TUI progress model with adapter
+	tuiManager := tui.NewTUIManager()
+	statsAdapter := &StatsManagerAdapter{statsManager}
+	progressModel := tuiManager.CreateProgressModel(tuiStats, statsAdapter)
+
+	// Create TUI program
+	program := tea.NewProgram(progressModel, tea.WithAltScreen())
+
+	// Create a silent stats updater that only updates data without printing
+	silentUpdater := NewSilentStatsUpdater(stats, statsManager)
+	silentUpdater.Start()
+
+	// Track if TUI has finished naturally
+	tuiFinished := make(chan bool, 1)
+
+	// Start a goroutine to handle updates and send messages to TUI
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-shutdownChan:
+				// Stop the silent updater
+				silentUpdater.Stop()
+				// Send quit message to TUI
+				program.Send(tui.QuitMsg{})
+				return
+			case <-tuiFinished:
+				// TUI finished naturally, stop the updater
+				silentUpdater.Stop()
+				return
+			case walletResult := <-walletResultsChan:
+				// Send wallet result to TUI
+				program.Send(tui.WalletResultMsg{
+					Result: tui.WalletResult{
+						Index:      walletResult.Index,
+						Address:    walletResult.Address,
+						PrivateKey: walletResult.PrivateKey,
+						Attempts:   walletResult.Attempts,
+						Time:       walletResult.Duration,
+						Error:      walletResult.Error,
+					},
+				})
+			case <-ticker.C:
+				// Get real-time data from the actual Statistics object 
+				// which is being updated by the SilentStatsUpdater
+				currentStats := *stats // Get current values atomically
+				
+				// Send progress update to TUI with real data
+				program.Send(tui.ProgressMsg{
+					Attempts:      currentStats.CurrentAttempts,
+					Speed:         currentStats.Speed,
+					Probability:   currentStats.Probability,
+					EstimatedTime: currentStats.EstimatedTime,
+					Difficulty:    currentStats.Difficulty,
+					Pattern:       currentStats.Pattern,
+				})
+			}
+		}
+	}()
+
+	// Run the TUI program
+	if _, err := program.Run(); err != nil {
+		// If TUI fails, stop the silent updater and fallback to text mode
+		silentUpdater.Stop()
+		// Restart with visible progress for text mode
+		progressManager := NewProgressManager(stats, statsManager)
+		progressManager.Start()
+		<-shutdownChan
+		progressManager.Stop()
+	} else {
+		// TUI succeeded and finished naturally (user pressed q or Ctrl+C)
+		// Safely signal completion without risking sending to closed channel
+		select {
+		case tuiFinished <- true:
+		default:
+		}
+		// Make sure to stop the silent updater
+		silentUpdater.Stop()
+		// Do not attempt to signal shutdownChan as it may already be closed
+		// The worker pool manages its own lifecycle
+	}
+}
+
 func privateToAddress(privateKey []byte) string {
 	// Get objects from pools
 	privateKeyInt := globalCryptoPool.GetBigInt()
@@ -903,11 +1122,16 @@ func generateBlocoWalletWithContext(ctx context.Context, prefix, suffix string, 
 	var stats *Statistics
 	if showProgress {
 		stats = newStatistics(prefix, suffix, isChecksum)
-		fmt.Printf("\n🎯 Generating bloco wallet with pattern: %s%s%s\n", prefix, strings.Repeat("*", 40-len(prefix)-len(suffix)), suffix)
-		fmt.Printf("📊 Difficulty: %s | 50%% probability: %s attempts\n\n",
-			formatNumber(int64(stats.Difficulty)),
-			formatNumber(stats.Probability50))
-		fmt.Printf("🧵 Using %d worker threads\n\n", threads)
+		
+		// Only show CLI output if TUI is not being used
+		tuiManager := tui.NewTUIManager()
+		if !tuiManager.ShouldUseTUI() {
+			fmt.Printf("\n🎯 Generating bloco wallet with pattern: %s%s%s\n", prefix, strings.Repeat("*", 40-len(prefix)-len(suffix)), suffix)
+			fmt.Printf("📊 Difficulty: %s | 50%% probability: %s attempts\n\n",
+				formatNumber(int64(stats.Difficulty)),
+				formatNumber(stats.Probability50))
+			fmt.Printf("🧵 Using %d worker threads\n\n", threads)
+		}
 	}
 
 	// Create a worker pool with the specified number of threads
@@ -921,7 +1145,8 @@ func generateBlocoWalletWithContext(ctx context.Context, prefix, suffix string, 
 
 	// Start a goroutine to display progress
 	if showProgress {
-		go displayProgressParallel(stats, statsManager, workerPool.shutdownChan)
+		// For single wallet generation, we don't need wallet results channel
+		go displayProgressParallel(stats, statsManager, workerPool.shutdownChan, nil)
 	}
 
 	// Generate wallet using the worker pool with context
@@ -930,13 +1155,18 @@ func generateBlocoWalletWithContext(ctx context.Context, prefix, suffix string, 
 	// Final progress update
 	if showProgress {
 		stats.update(attempts)
-		stats.displayProgress()
-		fmt.Printf("\n✅ Success! Found matching address in %s attempts\n", formatNumber(attempts))
+		
+		// Only show CLI output if TUI is not being used
+		tuiManager := tui.NewTUIManager()
+		if !tuiManager.ShouldUseTUI() {
+			stats.displayProgress()
+			fmt.Printf("\n✅ Success! Found matching address in %s attempts\n", formatNumber(attempts))
 
-		// Display thread utilization statistics
-		metrics := statsManager.GetMetrics()
-		fmt.Printf("🧵 Thread utilization: %.2f%% efficiency\n", metrics.EfficiencyRatio*100)
-		fmt.Printf("⚡ Peak performance: %.0f addr/s\n\n", statsManager.GetPeakSpeed())
+			// Display thread utilization statistics
+			metrics := statsManager.GetMetrics()
+			fmt.Printf("🧵 Thread utilization: %.2f%% efficiency\n", metrics.EfficiencyRatio*100)
+			fmt.Printf("⚡ Peak performance: %.0f addr/s\n\n", statsManager.GetPeakSpeed())
+		}
 	}
 
 	if wallet != nil {
@@ -971,10 +1201,15 @@ func generateBlocoWalletSingleThreadWithContext(ctx context.Context, prefix, suf
 
 	if showProgress {
 		stats = newStatistics(prefix, suffix, isChecksum)
-		fmt.Printf("\n🎯 Generating bloco wallet with pattern: %s%s%s\n", prefix, strings.Repeat("*", 40-len(prefix)-len(suffix)), suffix)
-		fmt.Printf("📊 Difficulty: %s | 50%% probability: %s attempts\n\n",
-			formatNumber(int64(stats.Difficulty)),
-			formatNumber(stats.Probability50))
+		
+		// Only show CLI output if TUI is not being used
+		tuiManager := tui.NewTUIManager()
+		if !tuiManager.ShouldUseTUI() {
+			fmt.Printf("\n🎯 Generating bloco wallet with pattern: %s%s%s\n", prefix, strings.Repeat("*", 40-len(prefix)-len(suffix)), suffix)
+			fmt.Printf("📊 Difficulty: %s | 50%% probability: %s attempts\n\n",
+				formatNumber(int64(stats.Difficulty)),
+				formatNumber(stats.Probability50))
+		}
 	}
 
 	lastProgressUpdate := time.Now()
@@ -985,8 +1220,12 @@ func generateBlocoWalletSingleThreadWithContext(ctx context.Context, prefix, suf
 			select {
 			case <-ctx.Done():
 				if showProgress {
-					fmt.Printf("\n🛑 Generation cancelled after %s attempts\n", formatNumber(int64(attempts)))
-					fmt.Printf("Reason: %v\n", ctx.Err())
+					// Only show CLI output if TUI is not being used
+					tuiManager := tui.NewTUIManager()
+					if !tuiManager.ShouldUseTUI() {
+						fmt.Printf("\n🛑 Generation cancelled after %s attempts\n", formatNumber(int64(attempts)))
+						fmt.Printf("Reason: %v\n", ctx.Err())
+					}
 				}
 				return &WalletResult{
 					Error:    fmt.Sprintf("Generation cancelled: %v", ctx.Err()),
@@ -1014,8 +1253,13 @@ func generateBlocoWalletSingleThreadWithContext(ctx context.Context, prefix, suf
 
 			if showProgress {
 				stats.update(int64(attempts))
-				stats.displayProgress()
-				fmt.Printf("\n✅ Success! Found matching address in %s attempts\n", formatNumber(int64(attempts)))
+				
+				// Only show CLI output if TUI is not being used
+				tuiManager := tui.NewTUIManager()
+				if !tuiManager.ShouldUseTUI() {
+					stats.displayProgress()
+					fmt.Printf("\n✅ Success! Found matching address in %s attempts\n", formatNumber(int64(attempts)))
+				}
 			}
 
 			return &WalletResult{
@@ -1181,9 +1425,218 @@ func runQuickSingleThreadBenchmarkWithContext(ctx context.Context, pattern strin
 
 // runBenchmark runs a performance benchmark with multi-thread support and scalability analysis
 func runBenchmark(maxAttempts int64, pattern string, isChecksum bool) *BenchmarkResult {
-	// Use background context for backward compatibility
-	ctx := context.Background()
-	return runBenchmarkWithContext(ctx, maxAttempts, pattern, isChecksum)
+	// Check if TUI should be used
+	tuiManager := tui.NewTUIManager()
+	if tuiManager.ShouldUseTUI() {
+		return runBenchmarkTUI(maxAttempts, pattern, isChecksum)
+	}
+	
+	// Use global context for signal handling
+	return runBenchmarkWithContext(globalCtx, maxAttempts, pattern, isChecksum)
+}
+
+// runBenchmarkTUI runs a performance benchmark using TUI interface
+func runBenchmarkTUI(maxAttempts int64, pattern string, isChecksum bool) *BenchmarkResult {
+	ctx := globalCtx
+	
+	if maxAttempts == 0 {
+		maxAttempts = 10000
+	}
+
+	fmt.Printf("🚀 Starting multi-threaded benchmark with pattern '%s' (checksum: %t)\n", pattern, isChecksum)
+	fmt.Printf("📈 Target: %s attempts | Step size: %d\n", formatNumber(maxAttempts), Step)
+
+	// First run a quick single-thread benchmark to establish baseline
+	singleThreadSpeed := runQuickSingleThreadBenchmarkWithContext(ctx, pattern, isChecksum)
+
+	result := &BenchmarkResult{
+		SpeedSamples:      make([]float64, 0),
+		DurationSamples:   make([]time.Duration, 0),
+		SingleThreadSpeed: singleThreadSpeed,
+		ThreadCount:       threads,
+		MinSpeed:          math.MaxFloat64,
+		MaxSpeed:          0,
+	}
+
+	// Create TUI benchmark model
+	tuiManager := tui.NewTUIManager()
+	benchmarkModel := tuiManager.CreateBenchmarkModel()
+
+	// Create TUI program
+	program := tea.NewProgram(benchmarkModel, tea.WithAltScreen())
+
+	// Create a worker pool with the specified number of threads
+	workerPool := NewWorkerPool(threads)
+
+	// Start the worker pool
+	workerPool.Start()
+
+	var attempts int64 = 0
+	startTime := time.Now()
+	done := make(chan struct{})
+
+	// Start benchmark goroutine
+	go func() {
+		defer close(done)
+		
+		// Give TUI time to initialize
+		time.Sleep(200 * time.Millisecond)
+		
+		for attempts < maxAttempts {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				// Run benchmark step
+				stepStart := time.Now()
+				
+				// Create work items for the benchmark step
+				workItems := make([]WorkItem, Step)
+				for i := range workItems {
+					workItems[i] = WorkItem{
+						Prefix:     pattern,
+						Suffix:     "",
+						IsChecksum: isChecksum,
+						BatchSize:  1,
+					}
+				}
+				
+				// Submit batch work
+				workerPool.SubmitBatch(workItems)
+				
+				attempts += Step
+				stepDuration := time.Since(stepStart)
+				
+				// Calculate speed for this step
+				stepSpeed := float64(Step) / stepDuration.Seconds()
+				result.SpeedSamples = append(result.SpeedSamples, stepSpeed)
+				result.DurationSamples = append(result.DurationSamples, stepDuration)
+				
+				// Update min/max speeds
+				if len(result.SpeedSamples) == 1 {
+					result.MinSpeed = stepSpeed
+					result.MaxSpeed = stepSpeed
+				} else {
+					if stepSpeed < result.MinSpeed {
+						result.MinSpeed = stepSpeed
+					}
+					if stepSpeed > result.MaxSpeed {
+						result.MaxSpeed = stepSpeed
+					}
+				}
+				
+				// Calculate average speed so far
+				totalSpeed := 0.0
+				for _, s := range result.SpeedSamples {
+					totalSpeed += s
+				}
+				avgSpeed := totalSpeed / float64(len(result.SpeedSamples))
+				
+				// Calculate current scalability efficiency
+				currentEfficiency := 0.0
+				if singleThreadSpeed > 0 {
+					actualSpeedup := avgSpeed / singleThreadSpeed
+					idealSpeedup := float64(threads)
+					currentEfficiency = actualSpeedup / idealSpeedup
+				}
+				
+				// Update TUI with progress
+				program.Send(tui.BenchmarkUpdateMsg{
+					Results: &tui.BenchmarkResult{
+						TotalAttempts:         attempts,
+						TotalDuration:         time.Since(startTime),
+						AverageSpeed:          avgSpeed,
+						MinSpeed:              result.MinSpeed,
+						MaxSpeed:              result.MaxSpeed,
+						SpeedSamples:          result.SpeedSamples,
+						DurationSamples:       result.DurationSamples,
+						SingleThreadSpeed:     result.SingleThreadSpeed,
+						ThreadCount:           result.ThreadCount,
+						ScalabilityEfficiency: currentEfficiency,
+					},
+					Running: true,
+					Progress: tui.ProgressMsg{
+						Attempts:      attempts,
+						Speed:         stepSpeed,
+						Pattern:       pattern,
+						Difficulty:    computeDifficulty(pattern, "", isChecksum),
+						EstimatedTime: time.Duration(float64(maxAttempts-attempts)/avgSpeed) * time.Second,
+					},
+				})
+				
+				time.Sleep(10 * time.Millisecond) // Small delay for UI updates
+			}
+		}
+	}()
+
+	// Start a goroutine to handle TUI completion
+	go func() {
+		select {
+		case <-done:
+			// Benchmark completed, calculate final results
+			result.TotalAttempts = attempts
+			result.TotalDuration = time.Since(startTime)
+			
+			if len(result.SpeedSamples) > 0 {
+				total := 0.0
+				min := result.SpeedSamples[0]
+				max := result.SpeedSamples[0]
+				
+				for _, speed := range result.SpeedSamples {
+					total += speed
+					if speed < min {
+						min = speed
+					}
+					if speed > max {
+						max = speed
+					}
+				}
+				
+				result.AverageSpeed = total / float64(len(result.SpeedSamples))
+				result.MinSpeed = min
+				result.MaxSpeed = max
+			}
+			
+			// Calculate scalability efficiency
+			if singleThreadSpeed > 0 {
+				actualSpeedup := result.AverageSpeed / singleThreadSpeed
+				idealSpeedup := float64(threads)
+				result.ScalabilityEfficiency = actualSpeedup / idealSpeedup
+			}
+			
+			// Send completion message to TUI
+			program.Send(tui.BenchmarkCompleteMsg{
+				Results: &tui.BenchmarkResult{
+					TotalAttempts:         result.TotalAttempts,
+					TotalDuration:         result.TotalDuration,
+					AverageSpeed:          result.AverageSpeed,
+					MinSpeed:              result.MinSpeed,
+					MaxSpeed:              result.MaxSpeed,
+					SpeedSamples:          result.SpeedSamples,
+					DurationSamples:       result.DurationSamples,
+					SingleThreadSpeed:     result.SingleThreadSpeed,
+					ThreadCount:           result.ThreadCount,
+					ScalabilityEfficiency: result.ScalabilityEfficiency,
+				},
+			})
+			
+		case <-ctx.Done():
+			// Context cancelled
+		}
+	}()
+
+	// Run the TUI program
+	if _, err := program.Run(); err != nil {
+		// If TUI fails, stop workers and return text-based fallback
+		workerPool.Shutdown()
+		fmt.Printf("TUI failed: %v, falling back to text mode\n", err)
+		return runBenchmarkWithContext(ctx, maxAttempts, pattern, isChecksum)
+	}
+
+	// Stop the worker pool
+	workerPool.Shutdown()
+
+	return result
 }
 
 // runBenchmarkWithContext runs a performance benchmark with context cancellation support
@@ -1520,6 +1973,38 @@ func generateMultipleWallets(prefix, suffix string, count int, isChecksum, showP
 }
 
 func generateMultipleWalletsWithContext(ctx context.Context, prefix, suffix string, count int, isChecksum, showProgress bool) []*WalletResult {
+	// Check if TUI should be used and remember this decision
+	tuiManager := tui.NewTUIManager()
+	useTUI := tuiManager.ShouldUseTUI()
+	
+	// Create channels for sending wallet results and stats updates to TUI
+	var walletResultsChan chan WalletResultForTUI
+	var statsUpdateChan chan StatsUpdateForTUI
+	if useTUI && showProgress {
+		walletResultsChan = make(chan WalletResultForTUI, count)
+		statsUpdateChan = make(chan StatsUpdateForTUI, 100) // Buffer for frequent updates
+		
+		// Start wallet generation in background and display TUI in foreground
+		generationDone := make(chan []*WalletResult, 1)
+		go func() {
+			results := generateWalletsInBackground(ctx, prefix, suffix, count, isChecksum, walletResultsChan, statsUpdateChan)
+			generationDone <- results
+		}()
+		
+		// Display TUI in foreground (blocks until user exits)
+		displayMultipleWalletsTUI(prefix, suffix, count, isChecksum, walletResultsChan, statsUpdateChan)
+		
+		// Get results after TUI is done
+		results := <-generationDone
+		return results
+	}
+	
+	// CLI mode: generate wallets directly without TUI
+	return generateWalletsDirectly(ctx, prefix, suffix, count, isChecksum, showProgress)
+}
+
+// generateWalletsDirectly generates wallets directly for CLI mode
+func generateWalletsDirectly(ctx context.Context, prefix, suffix string, count int, isChecksum, showProgress bool) []*WalletResult {
 	fmt.Printf("Generating %d bloco wallets with prefix '%s' and suffix '%s'\n", count, prefix, suffix)
 	fmt.Printf("Checksum validation: %t\n", isChecksum)
 	fmt.Println(strings.Repeat("-", 80))
@@ -1576,6 +2061,212 @@ func generateMultipleWalletsWithContext(ctx context.Context, prefix, suffix stri
 	}
 
 	return results
+}
+
+// generateWalletsInBackground generates wallets in background for TUI mode
+func generateWalletsInBackground(ctx context.Context, prefix, suffix string, count int, isChecksum bool, walletResultsChan chan WalletResultForTUI, statsUpdateChan chan StatsUpdateForTUI) []*WalletResult {
+	results := make([]*WalletResult, 0, count)
+	
+	// Track statistics for updates
+	startTime := time.Now()
+	totalAttempts := int64(0)
+	completedWallets := 0
+	
+	// Create stats for difficulty calculation
+	stats := newStatistics(prefix, suffix, isChecksum)
+	
+	// Send periodic stats updates
+	statsUpdateTicker := time.NewTicker(500 * time.Millisecond)
+	defer statsUpdateTicker.Stop()
+	
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-statsUpdateTicker.C:
+				if statsUpdateChan != nil {
+					elapsed := time.Since(startTime)
+					speed := float64(totalAttempts) / elapsed.Seconds()
+					
+					// Calculate progress as percentage of wallets completed
+					progressPercent := (float64(completedWallets) / float64(count)) * 100.0
+					
+					// Calculate probability differently: how far we are in the expected attempts
+					probability := progressPercent // Progress is the real probability of completion
+					
+					// Calculate ETA based on remaining wallets and current speed
+					remaining := count - completedWallets
+					var eta time.Duration
+					if remaining > 0 && speed > 0 {
+						// Estimate remaining attempts based on average so far
+						var avgAttemptsPerWallet float64
+						if completedWallets > 0 {
+							avgAttemptsPerWallet = float64(totalAttempts) / float64(completedWallets)
+						} else {
+							avgAttemptsPerWallet = float64(stats.Probability50)
+						}
+						
+						estimatedRemainingAttempts := float64(remaining) * avgAttemptsPerWallet
+						eta = time.Duration(estimatedRemainingAttempts/speed) * time.Second
+					}
+					
+					statsUpdateChan <- StatsUpdateForTUI{
+						Attempts:         totalAttempts,
+						Speed:            speed,
+						Probability:      probability,
+						ETA:              eta,
+						CompletedWallets: completedWallets,
+						TotalWallets:     count,
+						ProgressPercent:  progressPercent,
+					}
+				}
+			}
+		}
+	}()
+
+	for i := 0; i < count; i++ {
+		// Check for cancellation before each wallet generation
+		select {
+		case <-ctx.Done():
+			// Send cancellation to TUI if needed
+			if walletResultsChan != nil {
+				walletResultsChan <- WalletResultForTUI{
+					Index: i + 1,
+					Error: ctx.Err().Error(),
+				}
+			}
+			close(walletResultsChan)
+			return results
+		default:
+		}
+
+		walletStart := time.Now()
+		result := generateBlocoWalletWithContext(ctx, prefix, suffix, isChecksum, false) // No progress for individual wallets
+		walletDuration := time.Since(walletStart)
+
+		if result.Error != "" {
+			// Send error result to TUI
+			if walletResultsChan != nil {
+				walletResultsChan <- WalletResultForTUI{
+					Index:    i + 1,
+					Error:    result.Error,
+					Duration: walletDuration,
+				}
+			}
+
+			// Check if error is due to cancellation
+			if ctx.Err() != nil {
+				close(walletResultsChan)
+				return results
+			}
+			continue
+		}
+
+		results = append(results, result)
+		
+		// Update statistics tracking
+		totalAttempts += int64(result.Attempts)
+		completedWallets++
+
+		// Send successful wallet result to TUI
+		if walletResultsChan != nil {
+			walletResultsChan <- WalletResultForTUI{
+				Index:      i + 1,
+				Address:    result.Wallet.Address,
+				PrivateKey: "0x" + result.Wallet.PrivKey,
+				Attempts:   result.Attempts,
+				Duration:   walletDuration,
+				Error:      "",
+			}
+		}
+	}
+
+	// Close the channels to signal completion
+	if walletResultsChan != nil {
+		close(walletResultsChan)
+	}
+	if statsUpdateChan != nil {
+		close(statsUpdateChan)
+	}
+
+	return results
+}
+
+// displayMultipleWalletsTUI shows a TUI interface for multiple wallet generation
+func displayMultipleWalletsTUI(prefix, suffix string, count int, isChecksum bool, walletResultsChan chan WalletResultForTUI, statsUpdateChan chan StatsUpdateForTUI) {
+	// Create TUI statistics interface with initial values for the pattern
+	stats := newStatistics(prefix, suffix, isChecksum)
+	tuiStats := &tui.Statistics{
+		Difficulty:      stats.Difficulty,
+		Probability50:   stats.Probability50,
+		CurrentAttempts: 0,
+		Speed:           0,
+		Probability:     0,
+		EstimatedTime:   0,
+		StartTime:       time.Now(),
+		LastUpdate:      time.Now(),
+		Pattern:         stats.Pattern,
+		IsChecksum:      stats.IsChecksum,
+	}
+
+	// Create TUI progress model
+	tuiManager := tui.NewTUIManager()
+	progressModel := tuiManager.CreateProgressModel(tuiStats, nil)
+
+	// Create TUI program
+	program := tea.NewProgram(progressModel, tea.WithAltScreen())
+
+	// Start a goroutine to handle both wallet results and stats updates
+	go func() {
+		walletResultsActive := true
+		statsUpdatesActive := true
+		
+		for walletResultsActive || statsUpdatesActive {
+			select {
+			case result, ok := <-walletResultsChan:
+				if !ok {
+					walletResultsActive = false
+					continue
+				}
+				// Send wallet result to TUI
+				program.Send(tui.WalletResultMsg{
+					Result: tui.WalletResult{
+						Index:      result.Index,
+						Address:    result.Address,
+						PrivateKey: result.PrivateKey,
+						Attempts:   result.Attempts,
+						Time:       result.Duration,
+						Error:      result.Error,
+					},
+				})
+			
+			case statsUpdate, ok := <-statsUpdateChan:
+				if !ok {
+					statsUpdatesActive = false
+					continue
+				}
+				// Send statistics update to TUI
+				program.Send(tui.ProgressMsg{
+					Attempts:         statsUpdate.Attempts,
+					Speed:            statsUpdate.Speed,
+					Probability:      statsUpdate.Probability,
+					EstimatedTime:    statsUpdate.ETA,
+					Difficulty:       tuiStats.Difficulty, // Keep original difficulty
+					Pattern:          tuiStats.Pattern,    // Keep original pattern
+					CompletedWallets: statsUpdate.CompletedWallets,
+					TotalWallets:     statsUpdate.TotalWallets,
+					ProgressPercent:  statsUpdate.ProgressPercent,
+				})
+			}
+		}
+		
+		// When both channels are closed, keep TUI open until user exits
+		// The user can review all generated wallets in the table
+	}()
+
+	// Run the TUI program
+	program.Run()
 }
 
 var (
@@ -1806,6 +2497,102 @@ Performance Analysis:
 }
 
 // Statistics command
+// showStatisticsTUI displays statistics using TUI interface
+func showStatisticsTUI(stats *Statistics) {
+	// Create TUI statistics interface
+	tuiStats := &tui.Statistics{
+		Difficulty:      stats.Difficulty,
+		Probability50:   stats.Probability50,
+		CurrentAttempts: 0, // For stats display, this is not relevant
+		Speed:           0, // For stats display, this is not relevant
+		Probability:     0, // For stats display, this is not relevant
+		EstimatedTime:   0, // For stats display, this is not relevant
+		StartTime:       time.Now(),
+		LastUpdate:      time.Now(),
+		Pattern:         stats.Pattern,
+		IsChecksum:      stats.IsChecksum,
+	}
+
+	// Create TUI stats model
+	tuiManager := tui.NewTUIManager()
+	statsModel := tuiManager.CreateStatsModel(tuiStats)
+
+	// Create TUI program
+	program := tea.NewProgram(statsModel, tea.WithAltScreen())
+
+	// Run the TUI program
+	if _, err := program.Run(); err != nil {
+		// If TUI fails, fallback to text mode
+		fmt.Printf("TUI failed: %v, falling back to text mode\n", err)
+		displayStatisticsText(stats)
+	}
+}
+
+// displayStatisticsText displays statistics in text mode (fallback)
+func displayStatisticsText(stats *Statistics) {
+	prefix := ""
+	suffix := ""
+	
+	// Extract prefix and suffix from pattern
+	if len(stats.Pattern) > 0 {
+		// For simplicity, assume pattern doesn't contain mixed prefix/suffix
+		prefix = stats.Pattern
+	}
+
+	fmt.Printf("📊 Bloco Address Difficulty Analysis\n")
+	fmt.Printf("═══════════════════════════════════════════════════════════════\n")
+	fmt.Printf("🎯 Pattern: %s%s%s\n", prefix, strings.Repeat("*", 40-len(prefix)-len(suffix)), suffix)
+	fmt.Printf("🔧 Checksum: %t\n", stats.IsChecksum)
+	fmt.Printf("📏 Pattern length: %d characters\n\n", len(prefix+suffix))
+
+	fmt.Printf("📈 Difficulty Metrics:\n")
+	fmt.Printf("   • Base difficulty: %s\n", formatNumber(int64(math.Pow(16, float64(len(prefix+suffix))))))
+	fmt.Printf("   • Total difficulty: %s\n", formatNumber(int64(stats.Difficulty)))
+
+	if stats.Probability50 > 0 {
+		fmt.Printf("   • 50%% probability: %s attempts\n", formatNumber(stats.Probability50))
+	} else {
+		fmt.Printf("   • 50%% probability: Nearly impossible\n")
+	}
+
+	fmt.Printf("\n⏱️  Time Estimates (at different speeds):\n")
+	speeds := []float64{1000, 10000, 50000, 100000}
+	for _, speed := range speeds {
+		if stats.Probability50 > 0 {
+			timeFor50 := time.Duration(float64(stats.Probability50)/speed) * time.Second
+			fmt.Printf("   • %s addr/s: %s\n", formatNumber(int64(speed)), formatDuration(timeFor50))
+		} else {
+			fmt.Printf("   • %s addr/s: Nearly impossible\n", formatNumber(int64(speed)))
+		}
+	}
+
+	fmt.Printf("\n🎲 Probability Examples:\n")
+	attemptExamples := []int64{1000, 10000, 100000, 1000000}
+	for _, attempts := range attemptExamples {
+		if stats.Difficulty > 0 {
+			prob := computeProbability(stats.Difficulty, attempts) * 100
+			fmt.Printf("   • After %s attempts: %.4f%%\n", formatNumber(attempts), prob)
+		}
+	}
+
+	fmt.Printf("\n💡 Recommendations:\n")
+	if len(prefix+suffix) <= 3 {
+		fmt.Printf("   • ✅ Easy - Should generate quickly\n")
+	} else if len(prefix+suffix) <= 5 {
+		fmt.Printf("   • ⚠️  Moderate - May take some time\n")
+	} else if len(prefix+suffix) <= 7 {
+		fmt.Printf("   • 🔥 Hard - Will take considerable time\n")
+	} else {
+		fmt.Printf("   • 💀 Extremely Hard - May take days/weeks/years\n")
+	}
+
+	if stats.IsChecksum {
+		fmt.Printf("   • 📝 Checksum enabled - Difficulty increased\n")
+	}
+
+	fmt.Printf("═══════════════════════════════════════════════════════════════\n")
+}
+
 var statsCmd = &cobra.Command{
 	Use:   "stats",
 	Short: "Analyze difficulty statistics for address patterns",
@@ -1865,59 +2652,14 @@ Difficulty Levels:
 		}
 
 		stats := newStatistics(prefix, suffix, checksum)
-
-		fmt.Printf("📊 Bloco Address Difficulty Analysis\n")
-		fmt.Printf("═══════════════════════════════════════════════════════════════\n")
-		fmt.Printf("🎯 Pattern: %s%s%s\n", prefix, strings.Repeat("*", 40-len(prefix)-len(suffix)), suffix)
-		fmt.Printf("🔧 Checksum: %t\n", checksum)
-		fmt.Printf("📏 Pattern length: %d characters\n\n", len(prefix+suffix))
-
-		fmt.Printf("📈 Difficulty Metrics:\n")
-		fmt.Printf("   • Base difficulty: %s\n", formatNumber(int64(math.Pow(16, float64(len(prefix+suffix))))))
-		fmt.Printf("   • Total difficulty: %s\n", formatNumber(int64(stats.Difficulty)))
-
-		if stats.Probability50 > 0 {
-			fmt.Printf("   • 50%% probability: %s attempts\n", formatNumber(stats.Probability50))
+		
+		// Check if TUI should be used
+		tuiManager := tui.NewTUIManager()
+		if tuiManager.ShouldUseTUI() {
+			showStatisticsTUI(stats)
 		} else {
-			fmt.Printf("   • 50%% probability: Nearly impossible\n")
+			displayStatisticsText(stats)
 		}
-
-		fmt.Printf("\n⏱️  Time Estimates (at different speeds):\n")
-		speeds := []float64{1000, 10000, 50000, 100000}
-		for _, speed := range speeds {
-			if stats.Probability50 > 0 {
-				timeFor50 := time.Duration(float64(stats.Probability50)/speed) * time.Second
-				fmt.Printf("   • %s addr/s: %s\n", formatNumber(int64(speed)), formatDuration(timeFor50))
-			} else {
-				fmt.Printf("   • %s addr/s: Nearly impossible\n", formatNumber(int64(speed)))
-			}
-		}
-
-		fmt.Printf("\n🎲 Probability Examples:\n")
-		attemptExamples := []int64{1000, 10000, 100000, 1000000}
-		for _, attempts := range attemptExamples {
-			if stats.Difficulty > 0 {
-				prob := computeProbability(stats.Difficulty, attempts) * 100
-				fmt.Printf("   • After %s attempts: %.4f%%\n", formatNumber(attempts), prob)
-			}
-		}
-
-		fmt.Printf("\n💡 Recommendations:\n")
-		if len(prefix+suffix) <= 3 {
-			fmt.Printf("   • ✅ Easy - Should generate quickly\n")
-		} else if len(prefix+suffix) <= 5 {
-			fmt.Printf("   • ⚠️  Moderate - May take some time\n")
-		} else if len(prefix+suffix) <= 7 {
-			fmt.Printf("   • 🔥 Hard - Will take considerable time\n")
-		} else {
-			fmt.Printf("   • 💀 Extremely Hard - May take days/weeks/years\n")
-		}
-
-		if checksum {
-			fmt.Printf("   • 📝 Checksum enabled - Difficulty increased\n")
-		}
-
-		fmt.Printf("═══════════════════════════════════════════════════════════════\n")
 	},
 }
 
@@ -2038,9 +2780,12 @@ func init() {
 func main() {
 	// Initialize object pools for performance optimization
 	initializePools()
+	
+	// Setup global signal handling
+	setupSignalHandling()
 
 	if err := fang.Execute(
-		context.Background(),
+		globalCtx,
 		rootCmd,
 		fang.WithNotifySignal(os.Interrupt, os.Kill),
 	); err != nil {

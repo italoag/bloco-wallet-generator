@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -17,24 +18,32 @@ const (
 
 // ProgressModel represents the progress TUI component
 type ProgressModel struct {
-	progress     progress.Model
-	stats        *Statistics
-	statsManager StatsManager
-	styleManager *StyleManager
-	width        int
-	height       int
-	quitting     bool
-	lastUpdate   time.Time
+	progress         progress.Model
+	stats            *Statistics
+	statsManager     StatsManager
+	styleManager     *StyleManager
+	width            int
+	height           int
+	quitting         bool
+	lastUpdate       time.Time
+	walletResults    []WalletResult
+	showResults      bool
+	resultsTable     table.Model
+	completedWallets int // Number of wallets completed
+	totalWallets     int // Total wallets requested
 }
 
 // ProgressMsg represents a progress update message
 type ProgressMsg struct {
-	Attempts      int64
-	Speed         float64
-	Probability   float64
-	EstimatedTime time.Duration
-	Difficulty    float64
-	Pattern       string
+	Attempts         int64
+	Speed            float64
+	Probability      float64
+	EstimatedTime    time.Duration
+	Difficulty       float64
+	Pattern          string
+	CompletedWallets int     // Number of wallets successfully generated
+	TotalWallets     int     // Total wallets requested
+	ProgressPercent  float64 // Progress as percentage (0-100) for progress bar
 }
 
 // TickMsg represents a timer tick for smooth animations
@@ -42,6 +51,21 @@ type TickMsg time.Time
 
 // QuitMsg represents a quit signal
 type QuitMsg struct{}
+
+// WalletResult represents a generated wallet result for TUI display
+type WalletResult struct {
+	Index      int
+	Address    string
+	PrivateKey string
+	Attempts   int
+	Time       time.Duration
+	Error      string
+}
+
+// WalletResultMsg represents a wallet generation result message
+type WalletResultMsg struct {
+	Result WalletResult
+}
 
 var helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render
 
@@ -55,6 +79,34 @@ func NewProgressModel(stats *Statistics, statsManager StatsManager) ProgressMode
 	capabilities := tuiManager.DetectCapabilities()
 	styleManager := NewStyleManagerWithCapabilities(capabilities)
 
+	// Create results table with columns for wallet information
+	columns := []table.Column{
+		{Title: "№", Width: 3},
+		{Title: "Address", Width: 42},
+		{Title: "Private Key", Width: 66},
+		{Title: "Attempts", Width: 8},
+		{Title: "Time", Width: 8},
+	}
+
+	t := table.New(
+		table.WithColumns(columns),
+		table.WithFocused(true),  // Enable focus for scroll functionality
+		table.WithHeight(8),      // Show up to 8 wallets at a time (leaving space for progress info)
+	)
+
+	// Set table styles to match TUI theme
+	s := table.DefaultStyles()
+	s.Header = s.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color(PrimaryColor)).
+		BorderBottom(true).
+		Bold(true)
+	s.Selected = s.Selected.
+		Foreground(lipgloss.Color(TextPrimary)).
+		Background(lipgloss.Color(PrimaryColor)).
+		Bold(false)
+	t.SetStyles(s)
+
 	return ProgressModel{
 		progress:     prog,
 		stats:        stats,
@@ -64,6 +116,7 @@ func NewProgressModel(stats *Statistics, statsManager StatsManager) ProgressMode
 		height:       capabilities.TerminalHeight,
 		quitting:     false,
 		lastUpdate:   time.Now(),
+		resultsTable: t,
 	}
 }
 
@@ -76,8 +129,26 @@ func (m ProgressModel) Init() tea.Cmd {
 func (m ProgressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		m.quitting = true
-		return m, tea.Quit
+		switch msg.String() {
+		case "ctrl+c", "q":
+			m.quitting = true
+			return m, tea.Quit
+		case "up", "k":
+			// Navigate table up if we have results
+			if m.showResults && len(m.walletResults) > 0 {
+				var cmd tea.Cmd
+				m.resultsTable, cmd = m.resultsTable.Update(msg)
+				return m, cmd
+			}
+		case "down", "j":
+			// Navigate table down if we have results
+			if m.showResults && len(m.walletResults) > 0 {
+				var cmd tea.Cmd
+				m.resultsTable, cmd = m.resultsTable.Update(msg)
+				return m, cmd
+			}
+		}
+		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -93,20 +164,7 @@ func (m ProgressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-		// Update progress based on current statistics
-		if m.stats != nil {
-			// Calculate progress percentage (capped at 100%)
-			progressPercent := m.stats.Probability / 100.0
-			if progressPercent > 1.0 {
-				progressPercent = 1.0
-			}
-
-			// Set the progress percentage
-			cmd := m.progress.SetPercent(progressPercent)
-			m.lastUpdate = time.Now()
-
-			return m, tea.Batch(m.tickCmd(), cmd)
-		}
+		// Just continue ticking for animations, progress bar is updated via ProgressMsg
 		return m, m.tickCmd()
 
 	case ProgressMsg:
@@ -119,7 +177,28 @@ func (m ProgressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stats.Difficulty = msg.Difficulty
 			m.stats.Pattern = msg.Pattern
 			m.stats.LastUpdate = time.Now()
+			
+			// Update wallet progress tracking
+			m.completedWallets = msg.CompletedWallets
+			m.totalWallets = msg.TotalWallets
+			
+			// Update progress bar with correct percentage (wallets completed vs total)
+			progressPercent := msg.ProgressPercent / 100.0
+			if progressPercent > 1.0 {
+				progressPercent = 1.0
+			}
+			cmd := m.progress.SetPercent(progressPercent)
+			return m, cmd
 		}
+		return m, nil
+
+	case WalletResultMsg:
+		// Add new wallet result to the list
+		m.walletResults = append(m.walletResults, msg.Result)
+		m.showResults = true
+		
+		// Update the table with new data
+		m.updateResultsTable()
 		return m, nil
 
 	case QuitMsg:
@@ -133,7 +212,10 @@ func (m ProgressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	default:
-		return m, nil
+		// Try to update the table with any other messages
+		var cmd tea.Cmd
+		m.resultsTable, cmd = m.resultsTable.Update(msg)
+		return m, cmd
 	}
 }
 
@@ -152,6 +234,8 @@ func (m ProgressModel) View() string {
 	content.WriteString(m.styleManager.FormatTitle("🎯 Bloco Wallet Generation"))
 	content.WriteString("\n\n")
 
+	// ALWAYS show progress information first (pattern, difficulty, progress bar, stats)
+	
 	// Pattern information
 	content.WriteString(pad)
 	pattern := m.stats.Pattern
@@ -176,10 +260,23 @@ func (m ProgressModel) View() string {
 	content.WriteString(m.progress.View())
 	content.WriteString("\n\n")
 
-	// Progress percentage
+	// Progress information
 	content.WriteString(pad)
-	percentageText := fmt.Sprintf("%.2f%% probability", m.stats.Probability)
-	content.WriteString(m.styleManager.FormatHighlight(percentageText))
+	var progressText string
+	if m.totalWallets > 0 {
+		// Show wallets completed vs total when we know the total
+		progressText = fmt.Sprintf("%d/%d wallets completed (%.1f%%)", 
+			m.completedWallets, 
+			m.totalWallets,
+			(float64(m.completedWallets)/float64(m.totalWallets))*100.0)
+	} else if len(m.walletResults) > 0 {
+		// Fallback to wallet results count
+		progressText = fmt.Sprintf("%d wallets generated", len(m.walletResults))
+	} else {
+		// Show probability when no results yet
+		progressText = fmt.Sprintf("%.2f%% probability", m.stats.Probability)
+	}
+	content.WriteString(m.styleManager.FormatHighlight(progressText))
 	content.WriteString("\n\n")
 
 	// Statistics section using Bubbletea table-like display
@@ -205,10 +302,25 @@ func (m ProgressModel) View() string {
 		}
 	}
 
+	// ADD results table BELOW progress information when we have generated wallets
+	if m.showResults && len(m.walletResults) > 0 {
+		content.WriteString("\n\n")
+		content.WriteString(pad)
+		content.WriteString(m.styleManager.FormatSubtitle(fmt.Sprintf("💎 Generated Wallets (%d)", len(m.walletResults))))
+		content.WriteString("\n\n")
+		content.WriteString(pad)
+		content.WriteString(m.resultsTable.View())
+		content.WriteString("\n")
+	}
+
 	// Help text
 	content.WriteString("\n")
 	content.WriteString(pad)
-	content.WriteString(helpStyle("Press any key to quit"))
+	if m.showResults && len(m.walletResults) > 8 {
+		content.WriteString(helpStyle("Use ↑↓/j/k to scroll table • Press q to quit • Ctrl+C to exit"))
+	} else {
+		content.WriteString(helpStyle("Press q to quit • Ctrl+C to exit"))
+	}
 
 	return content.String()
 }
@@ -304,4 +416,60 @@ func SendQuit() tea.Cmd {
 	return func() tea.Msg {
 		return QuitMsg{}
 	}
+}
+
+// SendWalletResult sends a wallet result message to the model
+func SendWalletResult(index int, address, privateKey string, attempts int, duration time.Duration, err string) tea.Cmd {
+	return func() tea.Msg {
+		return WalletResultMsg{
+			Result: WalletResult{
+				Index:      index,
+				Address:    address,
+				PrivateKey: privateKey,
+				Attempts:   attempts,
+				Time:       duration,
+				Error:      err,
+			},
+		}
+	}
+}
+
+// updateResultsTable updates the Bubbletea table with current wallet results
+func (m *ProgressModel) updateResultsTable() {
+	rows := make([]table.Row, 0, len(m.walletResults))
+
+	for _, result := range m.walletResults {
+		if result.Error != "" {
+			// Error row
+			rows = append(rows, table.Row{
+				fmt.Sprintf("%d", result.Index),
+				"❌ Error occurred",
+				result.Error,
+				"-",
+				m.formatDuration(result.Time),
+			})
+		} else {
+			// Success row
+			rows = append(rows, table.Row{
+				fmt.Sprintf("%d", result.Index),
+				result.Address,
+				result.PrivateKey,
+				fmt.Sprintf("%d", result.Attempts),
+				m.formatDuration(result.Time),
+			})
+		}
+	}
+
+	m.resultsTable.SetRows(rows)
+}
+
+// formatDuration formats duration for table display
+func (m ProgressModel) formatDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	return fmt.Sprintf("%.1fm", d.Minutes())
 }

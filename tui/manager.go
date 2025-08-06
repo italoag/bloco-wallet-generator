@@ -256,10 +256,9 @@ func (tm *TUIManager) CreateProgressModel(stats *Statistics, statsManager StatsM
 	return NewProgressModel(stats, statsManager)
 }
 
-// CreateBenchmarkModel creates a benchmark TUI model (placeholder for now)
+// CreateBenchmarkModel creates a benchmark TUI model
 func (tm *TUIManager) CreateBenchmarkModel() tea.Model {
-	// This will be implemented in later tasks
-	return nil
+	return NewBenchmarkModel()
 }
 
 // CreateStatsModel creates a statistics TUI model

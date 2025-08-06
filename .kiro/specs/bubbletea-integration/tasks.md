@@ -46,7 +46,7 @@
   - Write unit tests for statistics table generation and formatting
   - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-- [ ] 6. Implement benchmark TUI component with results table and progress
+- [x] 6. Implement benchmark TUI component with results table and progress
   - Create `BenchmarkModel` struct in `tui/benchmark.go` combining progress and results display
   - Implement dual-mode display: progress during benchmark, results table after completion
   - Add real-time benchmark metrics display with performance statistics
@@ -56,7 +56,7 @@
   - Write unit tests for benchmark model state management and display transitions
   - _Requirements: 1.1, 1.2, 1.3, 1.5_
 
-- [ ] 7. Integrate TUI components with existing CLI commands
+- [x] 7. Integrate TUI components with existing CLI commands
   - Modify `generateBlocoWallet()` function to use progress TUI when `--progress` flag is set
   - Update `runBenchmark()` function to use benchmark TUI for interactive display
   - Integrate statistics TUI with `statsCmd` command handler
@@ -65,7 +65,7 @@
   - Test integration with various command combinations and parameters
   - _Requirements: 5.1, 5.2, 4.4_
 
-- [ ] 8. Implement signal handling and graceful TUI shutdown
+- [x] 8. Implement signal handling and graceful TUI shutdown
   - Integrate TUI signal handling with existing Fang signal management
   - Add proper cleanup for TUI components when receiving interrupt signals
   - Implement graceful shutdown that restores terminal state
