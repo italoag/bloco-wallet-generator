@@ -594,7 +594,7 @@ func displayProgressParallel(stats *Statistics, statsManager *StatsManager, shut
 	// Check if TUI should be used
 	tuiManager := tui.NewTUIManager()
 	if tuiManager.ShouldUseTUI() {
-		displayProgressTUI(stats, statsManager, shutdownChan, walletResultsChan)
+		
 		return
 	}
 
@@ -696,108 +696,11 @@ type StatsUpdateForTUI struct {
 	CompletedWallets int     // Number of wallets successfully generated
 	TotalWallets     int     // Total wallets requested
 	ProgressPercent  float64 // Progress as percentage (0-100)
+	Difficulty       float64 // The calculated difficulty
 }
 
 // displayProgressTUI shows progress using TUI interface with wallet results
-func displayProgressTUI(stats *Statistics, statsManager *StatsManager, shutdownChan chan struct{}, walletResultsChan chan WalletResultForTUI) {
-	// Create TUI statistics interface with initial values
-	tuiStats := &tui.Statistics{
-		Difficulty:      stats.Difficulty,
-		Probability50:   stats.Probability50,
-		CurrentAttempts: stats.CurrentAttempts,
-		Speed:           stats.Speed,
-		Probability:     stats.Probability,
-		EstimatedTime:   stats.EstimatedTime,
-		StartTime:       stats.StartTime,
-		LastUpdate:      stats.LastUpdate,
-		Pattern:         stats.Pattern,
-		IsChecksum:      stats.IsChecksum,
-	}
 
-	// Create TUI progress model with adapter
-	tuiManager := tui.NewTUIManager()
-	statsAdapter := &StatsManagerAdapter{statsManager}
-	progressModel := tuiManager.CreateProgressModel(tuiStats, statsAdapter)
-
-	// Create TUI program
-	program := tea.NewProgram(progressModel, tea.WithAltScreen())
-
-	// Create a silent stats updater that only updates data without printing
-	silentUpdater := NewSilentStatsUpdater(stats, statsManager)
-	silentUpdater.Start()
-
-	// Track if TUI has finished naturally
-	tuiFinished := make(chan bool, 1)
-
-	// Start a goroutine to handle updates and send messages to TUI
-	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-shutdownChan:
-				// Stop the silent updater
-				silentUpdater.Stop()
-				// Send quit message to TUI
-				program.Send(tui.QuitMsg{})
-				return
-			case <-tuiFinished:
-				// TUI finished naturally, stop the updater
-				silentUpdater.Stop()
-				return
-			case walletResult := <-walletResultsChan:
-				// Send wallet result to TUI
-				program.Send(tui.WalletResultMsg{
-					Result: tui.WalletResult{
-						Index:      walletResult.Index,
-						Address:    walletResult.Address,
-						PrivateKey: walletResult.PrivateKey,
-						Attempts:   walletResult.Attempts,
-						Time:       walletResult.Duration,
-						Error:      walletResult.Error,
-					},
-				})
-			case <-ticker.C:
-				// Get real-time data from the actual Statistics object 
-				// which is being updated by the SilentStatsUpdater
-				currentStats := *stats // Get current values atomically
-				
-				// Send progress update to TUI with real data
-				program.Send(tui.ProgressMsg{
-					Attempts:      currentStats.CurrentAttempts,
-					Speed:         currentStats.Speed,
-					Probability:   currentStats.Probability,
-					EstimatedTime: currentStats.EstimatedTime,
-					Difficulty:    currentStats.Difficulty,
-					Pattern:       currentStats.Pattern,
-				})
-			}
-		}
-	}()
-
-	// Run the TUI program
-	if _, err := program.Run(); err != nil {
-		// If TUI fails, stop the silent updater and fallback to text mode
-		silentUpdater.Stop()
-		// Restart with visible progress for text mode
-		progressManager := NewProgressManager(stats, statsManager)
-		progressManager.Start()
-		<-shutdownChan
-		progressManager.Stop()
-	} else {
-		// TUI succeeded and finished naturally (user pressed q or Ctrl+C)
-		// Safely signal completion without risking sending to closed channel
-		select {
-		case tuiFinished <- true:
-		default:
-		}
-		// Make sure to stop the silent updater
-		silentUpdater.Stop()
-		// Do not attempt to signal shutdownChan as it may already be closed
-		// The worker pool manages its own lifecycle
-	}
-}
 
 func privateToAddress(privateKey []byte) string {
 	// Get objects from pools
@@ -1976,29 +1879,84 @@ func generateMultipleWalletsWithContext(ctx context.Context, prefix, suffix stri
 	// Check if TUI should be used and remember this decision
 	tuiManager := tui.NewTUIManager()
 	useTUI := tuiManager.ShouldUseTUI()
-	
-	// Create channels for sending wallet results and stats updates to TUI
-	var walletResultsChan chan WalletResultForTUI
-	var statsUpdateChan chan StatsUpdateForTUI
+
 	if useTUI && showProgress {
-		walletResultsChan = make(chan WalletResultForTUI, count)
-		statsUpdateChan = make(chan StatsUpdateForTUI, 100) // Buffer for frequent updates
-		
-		// Start wallet generation in background and display TUI in foreground
+		// TUI mode
+		stats := newStatistics(prefix, suffix, isChecksum)
+		statsManager := NewStatsManager()
+		walletResultsChan := make(chan WalletResultForTUI, count)
+		statsUpdateChan := make(chan StatsUpdateForTUI, 100)
+
+		// Start wallet generation in the background
 		generationDone := make(chan []*WalletResult, 1)
 		go func() {
 			results := generateWalletsInBackground(ctx, prefix, suffix, count, isChecksum, walletResultsChan, statsUpdateChan)
 			generationDone <- results
 		}()
-		
-		// Display TUI in foreground (blocks until user exits)
-		displayMultipleWalletsTUI(prefix, suffix, count, isChecksum, walletResultsChan, statsUpdateChan)
-		
-		// Get results after TUI is done
-		results := <-generationDone
-		return results
+
+		// Create and run the TUI
+		tuiStats := &tui.Statistics{
+			Difficulty:      stats.Difficulty,
+			Probability50:   stats.Probability50,
+			StartTime:       stats.StartTime,
+			Pattern:         stats.Pattern,
+			IsChecksum:      isChecksum,
+		}
+		statsAdapter := &StatsManagerAdapter{statsManager}
+		progressModel := tuiManager.CreateProgressModel(tuiStats, statsAdapter)
+		program := tea.NewProgram(progressModel, tea.WithAltScreen())
+
+		// Start a goroutine to feed updates to the TUI
+		go func() {
+			ticker := time.NewTicker(100 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					program.Send(tui.QuitMsg{})
+					return
+				case statsUpdate := <-statsUpdateChan:
+					program.Send(tui.ProgressMsg{
+						Attempts:         statsUpdate.Attempts,
+						Speed:            statsUpdate.Speed,
+						Probability:      statsUpdate.Probability,
+						EstimatedTime:    statsUpdate.ETA,
+						CompletedWallets: statsUpdate.CompletedWallets,
+						TotalWallets:     statsUpdate.TotalWallets,
+						ProgressPercent:  statsUpdate.ProgressPercent,
+						IsComplete:       (statsUpdate.CompletedWallets >= statsUpdate.TotalWallets),
+						Difficulty:       statsUpdate.Difficulty,
+					})
+				case walletResult := <-walletResultsChan:
+					program.Send(tui.WalletResultMsg{Result: tui.WalletResult{
+						Index:      walletResult.Index,
+						Address:    walletResult.Address,
+						PrivateKey: walletResult.PrivateKey,
+						Attempts:   walletResult.Attempts,
+						Time:       walletResult.Duration,
+						Error:      walletResult.Error,
+					}})
+				}
+			}
+		}()
+
+		// Run the TUI. This blocks until the TUI exits.
+		if model, err := program.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error running TUI: %v\n", err)
+			globalCancel() // Cancel everything if TUI fails
+		} else if m, ok := model.(tui.ProgressModel); ok && m.Quitting() {
+			globalCancel() // Cancel if the user quit
+		}
+
+		// Wait for the generation to finish or for the context to be cancelled
+		select {
+		case results := <-generationDone:
+			return results // Generation finished successfully
+		case <-ctx.Done():
+			return nil // Return nil to indicate cancellation
+		}
 	}
-	
+
 	// CLI mode: generate wallets directly without TUI
 	return generateWalletsDirectly(ctx, prefix, suffix, count, isChecksum, showProgress)
 }
@@ -2064,7 +2022,8 @@ func generateWalletsDirectly(ctx context.Context, prefix, suffix string, count i
 }
 
 // generateWalletsInBackground generates wallets in background for TUI mode
-func generateWalletsInBackground(ctx context.Context, prefix, suffix string, count int, isChecksum bool, walletResultsChan chan WalletResultForTUI, statsUpdateChan chan StatsUpdateForTUI) []*WalletResult {
+func generateWalletsInBackground(ctx context.Context, prefix, suffix string, count int, isChecksum bool, walletResultsChan chan<- WalletResultForTUI, statsUpdateChan chan<- StatsUpdateForTUI) []*WalletResult {
+	difficulty := computeDifficulty(prefix, suffix, isChecksum)
 	results := make([]*WalletResult, 0, count)
 	
 	// Track statistics for updates with mutex for thread safety
@@ -2075,6 +2034,10 @@ func generateWalletsInBackground(ctx context.Context, prefix, suffix string, cou
 	
 	// Create stats for difficulty calculation
 	stats := newStatistics(prefix, suffix, isChecksum)
+	
+	// Create completion signal channel to coordinate with TUI
+	completionSignal := make(chan struct{})
+	defer close(completionSignal)
 	
 	// Function to send stats update
 	sendStatsUpdate := func() {
@@ -2109,14 +2072,19 @@ func generateWalletsInBackground(ctx context.Context, prefix, suffix string, cou
 				eta = time.Duration(estimatedRemainingAttempts/speed) * time.Second
 			}
 			
-			statsUpdateChan <- StatsUpdateForTUI{
-				Attempts:         currentAttempts,
-				Speed:            speed,
-				Probability:      probability,
-				ETA:              eta,
-				CompletedWallets: currentCompleted,
-				TotalWallets:     count,
-				ProgressPercent:  progressPercent,
+			select {
+			case statsUpdateChan <- StatsUpdateForTUI{
+						Attempts:         totalAttempts,
+						Speed:            speed,
+						Probability:      probability,
+						ETA:              eta,
+						CompletedWallets: len(results),
+						TotalWallets:     count,
+						ProgressPercent:  float64(len(results)) / float64(count) * 100,
+						Difficulty:       difficulty,
+					}:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}
@@ -2125,10 +2093,17 @@ func generateWalletsInBackground(ctx context.Context, prefix, suffix string, cou
 	statsUpdateTicker := time.NewTicker(500 * time.Millisecond)
 	defer statsUpdateTicker.Stop()
 	
+	// Stats update goroutine
+	statsUpdateDone := make(chan struct{})
 	go func() {
+		defer close(statsUpdateDone)
 		for {
 			select {
 			case <-ctx.Done():
+				return
+			case <-completionSignal:
+				// Send final stats update before stopping
+				sendStatsUpdate()
 				return
 			case <-statsUpdateTicker.C:
 				sendStatsUpdate()
@@ -2142,12 +2117,22 @@ func generateWalletsInBackground(ctx context.Context, prefix, suffix string, cou
 		case <-ctx.Done():
 			// Send cancellation to TUI if needed
 			if walletResultsChan != nil {
-				walletResultsChan <- WalletResultForTUI{
+				select {
+				case walletResultsChan <- WalletResultForTUI{
 					Index: i + 1,
 					Error: ctx.Err().Error(),
+				}:
+				default:
 				}
 			}
-			close(walletResultsChan)
+			// Wait for stats updates to finish before closing channels
+			<-statsUpdateDone
+			if walletResultsChan != nil {
+				close(walletResultsChan)
+			}
+			if statsUpdateChan != nil {
+				close(statsUpdateChan)
+			}
 			return results
 		default:
 		}
@@ -2159,16 +2144,26 @@ func generateWalletsInBackground(ctx context.Context, prefix, suffix string, cou
 		if result.Error != "" {
 			// Send error result to TUI
 			if walletResultsChan != nil {
-				walletResultsChan <- WalletResultForTUI{
+				select {
+				case walletResultsChan <- WalletResultForTUI{
 					Index:    i + 1,
 					Error:    result.Error,
 					Duration: walletDuration,
+				}:
+				case <-ctx.Done():
 				}
 			}
 
 			// Check if error is due to cancellation
 			if ctx.Err() != nil {
-				close(walletResultsChan)
+				// Wait for stats updates to finish before closing channels
+				<-statsUpdateDone
+				if walletResultsChan != nil {
+					close(walletResultsChan)
+				}
+				if statsUpdateChan != nil {
+					close(statsUpdateChan)
+				}
 				return results
 			}
 			continue
@@ -2177,20 +2172,57 @@ func generateWalletsInBackground(ctx context.Context, prefix, suffix string, cou
 		results = append(results, result)
 		
 		// Update statistics tracking
+		statsMutex.Lock()
 		totalAttempts += int64(result.Attempts)
 		completedWallets++
+		statsMutex.Unlock()
 
 		// Send successful wallet result to TUI
 		if walletResultsChan != nil {
-			walletResultsChan <- WalletResultForTUI{
+			select {
+			case walletResultsChan <- WalletResultForTUI{
 				Index:      i + 1,
 				Address:    result.Wallet.Address,
 				PrivateKey: "0x" + result.Wallet.PrivKey,
 				Attempts:   result.Attempts,
 				Duration:   walletDuration,
 				Error:      "",
+			}:
+			case <-ctx.Done():
 			}
 		}
+	}
+
+	// Generation completed - wait for final stats updates to be sent
+	<-statsUpdateDone
+	
+	// Send final stats update to ensure 100% completion is shown
+	sendStatsUpdate()
+	
+	// Give TUI time to process final updates before closing channels
+	finalUpdateTimer := time.NewTimer(2 * time.Second)
+	defer finalUpdateTimer.Stop()
+	
+	// Send final completion notification to TUI
+	if statsUpdateChan != nil {
+		select {
+		case statsUpdateChan <- StatsUpdateForTUI{
+			Attempts:         totalAttempts,
+			Speed:            float64(totalAttempts) / time.Since(startTime).Seconds(),
+			Probability:      100.0, // 100% completed
+			ETA:              0,     // No remaining time
+			CompletedWallets: completedWallets,
+			TotalWallets:     count,
+			ProgressPercent:  100.0, // 100% progress
+		}:
+		case <-finalUpdateTimer.C:
+		}
+	}
+	
+	// Wait a bit more to ensure TUI processes the final update
+	select {
+	case <-finalUpdateTimer.C:
+	case <-ctx.Done():
 	}
 
 	// Close the channels to signal completion
@@ -2232,12 +2264,20 @@ func displayMultipleWalletsTUI(prefix, suffix string, count int, isChecksum bool
 	go func() {
 		walletResultsActive := true
 		statsUpdatesActive := true
+		generationCompleted := false
+		finalDisplayTimer := time.NewTimer(5 * time.Second) // Extended display time for final stats
+		finalDisplayTimer.Stop() // Don't start until generation is complete
 		
-		for walletResultsActive || statsUpdatesActive {
+		for walletResultsActive || statsUpdatesActive || !generationCompleted {
 			select {
 			case result, ok := <-walletResultsChan:
 				if !ok {
 					walletResultsActive = false
+					if !statsUpdatesActive {
+						// Both channels closed, start final display timer
+						generationCompleted = true
+						finalDisplayTimer.Reset(5 * time.Second)
+					}
 					continue
 				}
 				// Send wallet result to TUI
@@ -2255,6 +2295,11 @@ func displayMultipleWalletsTUI(prefix, suffix string, count int, isChecksum bool
 			case statsUpdate, ok := <-statsUpdateChan:
 				if !ok {
 					statsUpdatesActive = false
+					if !walletResultsActive {
+						// Both channels closed, start final display timer
+						generationCompleted = true
+						finalDisplayTimer.Reset(5 * time.Second)
+					}
 					continue
 				}
 				// Send statistics update to TUI
@@ -2268,12 +2313,32 @@ func displayMultipleWalletsTUI(prefix, suffix string, count int, isChecksum bool
 					CompletedWallets: statsUpdate.CompletedWallets,
 					TotalWallets:     statsUpdate.TotalWallets,
 					ProgressPercent:  statsUpdate.ProgressPercent,
+					IsComplete:       statsUpdate.ProgressPercent >= 100.0 && statsUpdate.CompletedWallets >= count,
 				})
+				
+				// Check if generation is complete (100% progress)
+				if statsUpdate.ProgressPercent >= 100.0 && statsUpdate.CompletedWallets >= count {
+					if !generationCompleted {
+						generationCompleted = true
+						finalDisplayTimer.Reset(5 * time.Second)
+					}
+				}
+			
+			case <-finalDisplayTimer.C:
+				// Final display period is over
+				if generationCompleted {
+					return
+				}
 			}
 		}
 		
-		// When both channels are closed, keep TUI open until user exits
-		// The user can review all generated wallets in the table
+		// If we exit the loop without timer expiring, wait for final display
+		if generationCompleted {
+			select {
+			case <-finalDisplayTimer.C:
+			case <-time.After(5 * time.Second): // Fallback timeout
+			}
+		}
 	}()
 
 	// Run the TUI program

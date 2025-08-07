@@ -31,6 +31,7 @@ type ProgressModel struct {
 	resultsTable     table.Model
 	completedWallets int // Number of wallets completed
 	totalWallets     int // Total wallets requested
+	isComplete       bool // Indicates if generation is complete
 }
 
 // ProgressMsg represents a progress update message
@@ -44,6 +45,7 @@ type ProgressMsg struct {
 	CompletedWallets int     // Number of wallets successfully generated
 	TotalWallets     int     // Total wallets requested
 	ProgressPercent  float64 // Progress as percentage (0-100) for progress bar
+	IsComplete       bool    // Indicates if generation is complete
 }
 
 // TickMsg represents a timer tick for smooth animations
@@ -181,12 +183,22 @@ func (m ProgressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Update wallet progress tracking
 			m.completedWallets = msg.CompletedWallets
 			m.totalWallets = msg.TotalWallets
+			m.isComplete = msg.IsComplete // Update completion status
 			
 			// Update progress bar with correct percentage (wallets completed vs total)
 			progressPercent := msg.ProgressPercent / 100.0
 			if progressPercent > 1.0 {
 				progressPercent = 1.0
 			}
+			
+			// If generation is complete, ensure progress shows 100%
+			if msg.IsComplete || (msg.CompletedWallets >= msg.TotalWallets && msg.TotalWallets > 0) {
+				progressPercent = 1.0
+				m.stats.Probability = 100.0
+				m.stats.EstimatedTime = 0
+				m.isComplete = true
+			}
+			
 			cmd := m.progress.SetPercent(progressPercent)
 			return m, cmd
 		}
@@ -325,6 +337,10 @@ func (m ProgressModel) View() string {
 	return content.String()
 }
 
+func (m ProgressModel) Quitting() bool {
+	return m.quitting
+}
+
 // tickCmd returns a command that sends a tick message after a short delay
 func (m ProgressModel) tickCmd() tea.Cmd {
 	return tea.Tick(time.Millisecond*500, func(t time.Time) tea.Msg {
@@ -383,6 +399,10 @@ func (m ProgressModel) renderThreadStats(metrics ThreadMetrics) string {
 
 // formatETA formats the estimated time remaining
 func (m ProgressModel) formatETA() string {
+	if m.isComplete {
+		totalTime := time.Since(m.stats.StartTime)
+		return fmt.Sprintf("Done in %s", formatDuration(totalTime))
+	}
 	if m.stats.EstimatedTime > 0 {
 		return formatDuration(m.stats.EstimatedTime)
 	}
