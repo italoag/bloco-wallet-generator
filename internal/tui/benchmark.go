@@ -10,6 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"bloco-eth/pkg/wallet"
 )
 
 // BenchmarkState represents the current state of the benchmark TUI
@@ -26,7 +28,7 @@ type BenchmarkModel struct {
 	state          BenchmarkState
 	table          table.Model
 	progress       progress.Model
-	results        *BenchmarkResult
+	results        *wallet.BenchmarkResult
 	progressMsg    ProgressMsg
 	styleManager   *StyleManager
 	width          int
@@ -37,50 +39,36 @@ type BenchmarkModel struct {
 	transitionTime time.Time
 }
 
-// BenchmarkResult represents benchmark results (forward declaration to match main.go)
-type BenchmarkResult struct {
-	TotalAttempts         int64
-	TotalDuration         time.Duration
-	AverageSpeed          float64
-	MinSpeed              float64
-	MaxSpeed              float64
-	SpeedSamples          []float64
-	DurationSamples       []time.Duration
-	SingleThreadSpeed     float64
-	ThreadCount           int
-	ScalabilityEfficiency float64
-}
-
 // BenchmarkUpdateMsg represents a benchmark update message
 type BenchmarkUpdateMsg struct {
-	Results *BenchmarkResult
-	Running bool
+	Results  *wallet.BenchmarkResult
+	Running  bool
 	Progress ProgressMsg
 }
 
 // BenchmarkCompleteMsg represents benchmark completion
 type BenchmarkCompleteMsg struct {
-	Results *BenchmarkResult
+	Results *wallet.BenchmarkResult
 }
 
 // NewBenchmarkModel creates a new benchmark model
 func NewBenchmarkModel() BenchmarkModel {
 	// Create progress bar with gradient styling
 	p := progress.New(progress.WithDefaultGradient())
-	
+
 	// Create table for results display
 	columns := []table.Column{
 		{Title: "Metric", Width: 25},
 		{Title: "Value", Width: 20},
 		{Title: "Details", Width: 30},
 	}
-	
+
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithFocused(true),
 		table.WithHeight(10),
 	)
-	
+
 	// Set table styles
 	s := table.DefaultStyles()
 	s.Header = s.Header.
@@ -93,7 +81,7 @@ func NewBenchmarkModel() BenchmarkModel {
 		Background(lipgloss.Color(PrimaryColor)).
 		Bold(false)
 	t.SetStyles(s)
-	
+
 	return BenchmarkModel{
 		state:        BenchmarkStateProgress,
 		table:        t,
@@ -142,7 +130,7 @@ func (m BenchmarkModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.progressMsg = msg.Progress
 		m.running = msg.Running
 		m.lastUpdate = time.Now()
-		
+
 		if msg.Results != nil {
 			m.results = msg.Results
 			if !msg.Running && m.state == BenchmarkStateProgress {
@@ -165,7 +153,7 @@ func (m BenchmarkModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.table.SetRows(m.generateResultsRows())
 			}
 		}
-		
+
 		// Continue ticking for animations
 		cmds = append(cmds, tickCmd())
 
@@ -205,11 +193,11 @@ func (m BenchmarkModel) View() string {
 // renderProgressView renders the progress display
 func (m BenchmarkModel) renderProgressView() string {
 	var b strings.Builder
-	
+
 	// Header
 	header := m.styleManager.FormatHeader("🏃 Benchmark Running")
 	b.WriteString(header + "\n\n")
-	
+
 	// Progress bar
 	if m.progressMsg.Attempts > 0 {
 		// Calculate progress percentage based on attempts vs estimated total
@@ -225,36 +213,36 @@ func (m BenchmarkModel) renderProgressView() string {
 			// Fallback: use a rough estimate based on attempts
 			progressPercent = float64(m.progressMsg.Attempts) / 50000.0 // Assume max 50k attempts
 		}
-		
+
 		if progressPercent > 1.0 {
 			progressPercent = 1.0
 		}
 		if progressPercent < 0 {
 			progressPercent = 0
 		}
-		
+
 		progressBar := m.progress.ViewAs(progressPercent)
 		b.WriteString(progressBar + "\n\n")
 	}
-	
+
 	// Real-time metrics
 	metricsStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(PrimaryColor)).
 		Padding(1, 2)
-	
+
 	var metrics string
 	if m.results != nil {
 		metrics = fmt.Sprintf(
 			"📊 Current Performance:\n"+
-			"   Attempts: %s\n"+
-			"   Current Speed: %s addr/s\n"+
-			"   Average Speed: %s addr/s\n"+
-			"   Min/Max Speed: %s/%s addr/s\n"+
-			"   Pattern: %s\n"+
-			"   Difficulty: %.2f\n"+
-			"   Estimated Time: %s\n"+
-			"   Efficiency: %.1f%%",
+				"   Attempts: %s\n"+
+				"   Current Speed: %s addr/s\n"+
+				"   Average Speed: %s addr/s\n"+
+				"   Min/Max Speed: %s/%s addr/s\n"+
+				"   Pattern: %s\n"+
+				"   Difficulty: %.2f\n"+
+				"   Estimated Time: %s\n"+
+				"   Efficiency: %.1f%%",
 			formatLargeNumber(m.progressMsg.Attempts),
 			formatSpeed(m.progressMsg.Speed),
 			formatSpeed(m.results.AverageSpeed),
@@ -268,11 +256,11 @@ func (m BenchmarkModel) renderProgressView() string {
 	} else {
 		metrics = fmt.Sprintf(
 			"📊 Current Performance:\n"+
-			"   Attempts: %s\n"+
-			"   Speed: %s addr/s\n"+
-			"   Pattern: %s\n"+
-			"   Difficulty: %.2f\n"+
-			"   Estimated Time: %s",
+				"   Attempts: %s\n"+
+				"   Speed: %s addr/s\n"+
+				"   Pattern: %s\n"+
+				"   Difficulty: %.2f\n"+
+				"   Estimated Time: %s",
 			formatLargeNumber(m.progressMsg.Attempts),
 			formatSpeed(m.progressMsg.Speed),
 			m.progressMsg.Pattern,
@@ -280,72 +268,72 @@ func (m BenchmarkModel) renderProgressView() string {
 			formatDuration(m.progressMsg.EstimatedTime),
 		)
 	}
-	
+
 	b.WriteString(metricsStyle.Render(metrics) + "\n\n")
-	
+
 	// Help text
 	helpText := helpStyle("Press q to quit • Ctrl+C to exit")
 	b.WriteString(helpText)
-	
+
 	return b.String()
 }
 
 // renderTransitionView renders the transition between progress and results
 func (m BenchmarkModel) renderTransitionView() string {
 	var b strings.Builder
-	
+
 	header := m.styleManager.FormatHeader("✅ Benchmark Complete - Loading Results...")
 	b.WriteString(header + "\n\n")
-	
+
 	// Simple loading animation
 	dots := strings.Repeat(".", int(time.Since(m.transitionTime)/100*time.Millisecond)%4)
 	loading := fmt.Sprintf("Preparing results%s", dots)
 	b.WriteString(loading + "\n\n")
-	
+
 	return b.String()
 }
 
 // renderResultsView renders the benchmark results table
 func (m BenchmarkModel) renderResultsView() string {
 	var b strings.Builder
-	
+
 	// Header
 	header := m.styleManager.FormatHeader("📈 Benchmark Results")
 	b.WriteString(header + "\n\n")
-	
+
 	// Results summary
 	if m.results != nil {
 		summaryStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(SuccessColor)).
 			Padding(1, 2)
-		
+
 		summary := fmt.Sprintf(
 			"🎯 Summary:\n"+
-			"   Total Duration: %s\n"+
-			"   Average Speed: %.0f addr/s\n"+
-			"   Thread Efficiency: %.1f%%\n"+
-			"   Scalability Factor: %.2fx",
+				"   Total Duration: %s\n"+
+				"   Average Speed: %.0f addr/s\n"+
+				"   Thread Efficiency: %.1f%%\n"+
+				"   Scalability Factor: %.2fx",
 			formatDuration(m.results.TotalDuration),
 			m.results.AverageSpeed,
 			m.results.ScalabilityEfficiency*100,
 			float64(m.results.ThreadCount)*m.results.ScalabilityEfficiency,
 		)
-		
+
 		b.WriteString(summaryStyle.Render(summary) + "\n\n")
 	}
-	
+
 	// Results table
 	tableStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(PrimaryColor))
-	
+
 	b.WriteString(tableStyle.Render(m.table.View()) + "\n\n")
-	
+
 	// Help text
 	helpText := helpStyle("↑/↓: Navigate • q: Quit • Ctrl+C: Exit")
 	b.WriteString(helpText)
-	
+
 	return b.String()
 }
 
@@ -354,7 +342,7 @@ func (m BenchmarkModel) generateResultsRows() []table.Row {
 	if m.results == nil {
 		return []table.Row{}
 	}
-	
+
 	rows := []table.Row{
 		{"Total Attempts", formatLargeNumber(m.results.TotalAttempts), "Total addresses generated"},
 		{"Duration", formatDuration(m.results.TotalDuration), "Total benchmark time"},
@@ -366,7 +354,7 @@ func (m BenchmarkModel) generateResultsRows() []table.Row {
 		{"Scalability", fmt.Sprintf("%.1f%%", m.results.ScalabilityEfficiency*100), "Multi-threading efficiency"},
 		{"Speedup Factor", fmt.Sprintf("%.2fx", float64(m.results.ThreadCount)*m.results.ScalabilityEfficiency), "Performance improvement"},
 	}
-	
+
 	return rows
 }
 

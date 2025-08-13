@@ -9,12 +9,14 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"bloco-eth/pkg/wallet"
 )
 
 // StatsModel represents the statistics TUI component
 type StatsModel struct {
 	table        table.Model
-	stats        *Statistics
+	stats        *wallet.GenerationStats
 	styleManager *StyleManager
 	width        int
 	height       int
@@ -34,7 +36,7 @@ type StatsData struct {
 }
 
 // NewStatsModel creates a new statistics model
-func NewStatsModel(stats *Statistics) StatsModel {
+func NewStatsModel(stats *wallet.GenerationStats) StatsModel {
 	// Create style manager with terminal capabilities
 	tuiManager := NewTUIManager()
 	capabilities := tuiManager.DetectCapabilities()
@@ -579,11 +581,11 @@ func (m *StatsModel) adaptTableToSize() {
 
 // StatsUpdateMsg represents a statistics update message
 type StatsUpdateMsg struct {
-	Stats *Statistics
+	Stats *wallet.GenerationStats
 }
 
 // UpdateStats sends a statistics update message to the model
-func UpdateStats(stats *Statistics) tea.Cmd {
+func UpdateStats(stats *wallet.GenerationStats) tea.Cmd {
 	return func() tea.Msg {
 		return StatsUpdateMsg{Stats: stats}
 	}

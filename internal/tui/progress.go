@@ -9,6 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"bloco-eth/pkg/wallet"
 )
 
 const (
@@ -19,7 +21,7 @@ const (
 // ProgressModel represents the progress TUI component
 type ProgressModel struct {
 	progress         progress.Model
-	stats            *Statistics
+	stats            *wallet.GenerationStats
 	statsManager     StatsManager
 	styleManager     *StyleManager
 	width            int
@@ -29,8 +31,8 @@ type ProgressModel struct {
 	walletResults    []WalletResult
 	showResults      bool
 	resultsTable     table.Model
-	completedWallets int // Number of wallets completed
-	totalWallets     int // Total wallets requested
+	completedWallets int  // Number of wallets completed
+	totalWallets     int  // Total wallets requested
 	isComplete       bool // Indicates if generation is complete
 }
 
@@ -72,7 +74,7 @@ type WalletResultMsg struct {
 var helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render
 
 // NewProgressModel creates a new progress model
-func NewProgressModel(stats *Statistics, statsManager StatsManager) ProgressModel {
+func NewProgressModel(stats *wallet.GenerationStats, statsManager StatsManager) ProgressModel {
 	// Create progress bar with gradient styling following Bubbletea pattern
 	prog := progress.New(progress.WithDefaultGradient())
 
@@ -85,15 +87,15 @@ func NewProgressModel(stats *Statistics, statsManager StatsManager) ProgressMode
 	columns := []table.Column{
 		{Title: "№", Width: 3},
 		{Title: "Address", Width: 42},
-		{Title: "Private Key", Width: 66},
-		{Title: "Attempts", Width: 8},
-		{Title: "Time", Width: 8},
+		{Title: "Private Key", Width: 64},
+		{Title: "Attempts", Width: 10},
+		{Title: "Time", Width: 10},
 	}
 
 	t := table.New(
 		table.WithColumns(columns),
-		table.WithFocused(true),  // Enable focus for scroll functionality
-		table.WithHeight(8),      // Show up to 8 wallets at a time (leaving space for progress info)
+		table.WithFocused(true), // Enable focus for scroll functionality
+		table.WithHeight(8),     // Show up to 8 wallets at a time (leaving space for progress info)
 	)
 
 	// Set table styles to match TUI theme
@@ -110,15 +112,18 @@ func NewProgressModel(stats *Statistics, statsManager StatsManager) ProgressMode
 	t.SetStyles(s)
 
 	return ProgressModel{
-		progress:     prog,
-		stats:        stats,
-		statsManager: statsManager,
-		styleManager: styleManager,
-		width:        capabilities.TerminalWidth,
-		height:       capabilities.TerminalHeight,
-		quitting:     false,
-		lastUpdate:   time.Now(),
-		resultsTable: t,
+		progress:         prog,
+		stats:            stats,
+		statsManager:     statsManager,
+		styleManager:     styleManager,
+		width:            capabilities.TerminalWidth,
+		height:           capabilities.TerminalHeight,
+		quitting:         false,
+		lastUpdate:       time.Now(),
+		resultsTable:     t,
+		completedWallets: 0,
+		totalWallets:     1, // Default to 1 for single wallet generation
+		isComplete:       false,
 	}
 }
 
@@ -179,18 +184,18 @@ func (m ProgressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stats.Difficulty = msg.Difficulty
 			m.stats.Pattern = msg.Pattern
 			m.stats.LastUpdate = time.Now()
-			
+
 			// Update wallet progress tracking
 			m.completedWallets = msg.CompletedWallets
 			m.totalWallets = msg.TotalWallets
 			m.isComplete = msg.IsComplete // Update completion status
-			
+
 			// Update progress bar with correct percentage (wallets completed vs total)
 			progressPercent := msg.ProgressPercent / 100.0
 			if progressPercent > 1.0 {
 				progressPercent = 1.0
 			}
-			
+
 			// If generation is complete, ensure progress shows 100%
 			if msg.IsComplete || (msg.CompletedWallets >= msg.TotalWallets && msg.TotalWallets > 0) {
 				progressPercent = 1.0
@@ -198,7 +203,7 @@ func (m ProgressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.stats.EstimatedTime = 0
 				m.isComplete = true
 			}
-			
+
 			cmd := m.progress.SetPercent(progressPercent)
 			return m, cmd
 		}
@@ -209,8 +214,30 @@ func (m ProgressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.walletResults = append(m.walletResults, msg.Result)
 		m.showResults = true
 		
+		// Increment completed wallets count
+		m.completedWallets = len(m.walletResults)
+
 		// Update the table with new data
 		m.updateResultsTable()
+		
+		// Update progress to show completion
+		if m.totalWallets > 0 {
+			progressPercent := float64(m.completedWallets) / float64(m.totalWallets)
+			if progressPercent > 1.0 {
+				progressPercent = 1.0
+			}
+			if m.completedWallets >= m.totalWallets {
+				m.isComplete = true
+				progressPercent = 1.0
+				if m.stats != nil {
+					m.stats.Probability = 100.0
+					m.stats.EstimatedTime = 0
+				}
+			}
+			cmd := m.progress.SetPercent(progressPercent)
+			return m, cmd
+		}
+		
 		return m, nil
 
 	case QuitMsg:
@@ -247,7 +274,7 @@ func (m ProgressModel) View() string {
 	content.WriteString("\n\n")
 
 	// ALWAYS show progress information first (pattern, difficulty, progress bar, stats)
-	
+
 	// Pattern information
 	content.WriteString(pad)
 	pattern := m.stats.Pattern
@@ -277,8 +304,8 @@ func (m ProgressModel) View() string {
 	var progressText string
 	if m.totalWallets > 0 {
 		// Show wallets completed vs total when we know the total
-		progressText = fmt.Sprintf("%d/%d wallets completed (%.1f%%)", 
-			m.completedWallets, 
+		progressText = fmt.Sprintf("%d/%d wallets completed (%.1f%%)",
+			m.completedWallets,
 			m.totalWallets,
 			(float64(m.completedWallets)/float64(m.totalWallets))*100.0)
 	} else if len(m.walletResults) > 0 {
@@ -469,12 +496,22 @@ func (m *ProgressModel) updateResultsTable() {
 				m.formatDuration(result.Time),
 			})
 		} else {
-			// Success row
+			// Success row - format address and private key for better display
+			address := result.Address
+			if len(address) > 40 {
+				address = address[:40] // Truncate if too long for display
+			}
+			
+			privateKey := result.PrivateKey
+			if len(privateKey) > 60 {
+				privateKey = privateKey[:60] + "..." // Truncate long private keys
+			}
+			
 			rows = append(rows, table.Row{
 				fmt.Sprintf("%d", result.Index),
-				result.Address,
-				result.PrivateKey,
-				fmt.Sprintf("%d", result.Attempts),
+				address,
+				privateKey,
+				formatLargeNumber(int64(result.Attempts)),
 				m.formatDuration(result.Time),
 			})
 		}

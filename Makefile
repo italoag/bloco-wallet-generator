@@ -2,7 +2,7 @@
 
 # Variables
 BINARY_NAME=bloco-eth
-SOURCE_FILE=main.go
+SOURCE_FILE=./cmd/bloco-eth/main.go
 TEST_FILE=main_test.go
 
 # Go parameters
@@ -49,28 +49,28 @@ tidy: ## Clean up dependencies
 # Build the application
 .PHONY: build
 build: ## Build the application
-	$(GOBUILD) $(BUILD_FLAGS) -o $(BINARY_NAME) .
+	$(GOBUILD) $(BUILD_FLAGS) -o $(BINARY_NAME) $(SOURCE_FILE)
 	@echo "Build completed: $(BINARY_NAME)"
 
 # Build for different platforms
 .PHONY: build-linux
 build-linux: ## Build for Linux AMD64
-	GOOS=linux GOARCH=amd64 $(GOBUILD) $(BUILD_FLAGS) -o $(BINARY_NAME)-linux-amd64 .
+	GOOS=linux GOARCH=amd64 $(GOBUILD) $(BUILD_FLAGS) -o $(BINARY_NAME)-linux-amd64 $(SOURCE_FILE)
 	@echo "Linux build completed: $(BINARY_NAME)-linux-amd64"
 
 .PHONY: build-windows
 build-windows: ## Build for Windows AMD64
-	GOOS=windows GOARCH=amd64 $(GOBUILD) $(BUILD_FLAGS) -o $(BINARY_NAME)-windows-amd64.exe .
+	GOOS=windows GOARCH=amd64 $(GOBUILD) $(BUILD_FLAGS) -o $(BINARY_NAME)-windows-amd64.exe $(SOURCE_FILE)
 	@echo "Windows build completed: $(BINARY_NAME)-windows-amd64.exe"
 
 .PHONY: build-darwin
 build-darwin: ## Build for macOS AMD64
-	GOOS=darwin GOARCH=amd64 $(GOBUILD) $(BUILD_FLAGS) -o $(BINARY_NAME)-darwin-amd64 .
+	GOOS=darwin GOARCH=amd64 $(GOBUILD) $(BUILD_FLAGS) -o $(BINARY_NAME)-darwin-amd64 $(SOURCE_FILE)
 	@echo "macOS build completed: $(BINARY_NAME)-darwin-amd64"
 
 .PHONY: build-darwin-arm64
 build-darwin-arm64: ## Build for macOS ARM64 (M1/M2)
-	GOOS=darwin GOARCH=arm64 $(GOBUILD) $(BUILD_FLAGS) -o $(BINARY_NAME)-darwin-arm64 .
+	GOOS=darwin GOARCH=arm64 $(GOBUILD) $(BUILD_FLAGS) -o $(BINARY_NAME)-darwin-arm64 $(SOURCE_FILE)
 	@echo "macOS ARM64 build completed: $(BINARY_NAME)-darwin-arm64"
 
 # Build for all platforms
@@ -148,7 +148,7 @@ clean: ## Clean build artifacts
 # Install the application
 .PHONY: install
 install: ## Install the application to GOPATH/bin
-	$(GOCMD) install $(BUILD_FLAGS) .
+	$(GOCMD) install $(BUILD_FLAGS) $(SOURCE_FILE)
 	@echo "Application installed to GOPATH/bin"
 
 # Development workflow

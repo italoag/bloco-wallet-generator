@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "name": "Go Code Quality Analyzer",
+  "description": "Monitors Go source code files for changes and provides automated code quality analysis including code smells, design patterns, clean code principles, SOLID principles, Go conventions, and performance optimizations.",
+  "version": "1",
+  "when": {
+    "type": "userTriggered",
+    "patterns": [
+      "*.go",
+      "**/*.go"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Analyze the modified Go code for potential improvements. Focus on:\n\n1. **Code Smells**: Identify long functions, duplicate code, complex conditionals, large classes/structs, inappropriate naming\n2. **Design Patterns**: Suggest appropriate Go patterns (factory, builder, strategy, observer, etc.)\n3. **Clean Code Principles**: Review function length, naming conventions, single responsibility, readability\n4. **SOLID Principles**: Check for violations of Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion\n5. **Go Conventions**: Verify adherence to Go standards (gofmt, naming, error handling, package structure, documentation)\n6. **Performance**: Identify potential optimizations (memory allocations, goroutine usage, algorithm efficiency, data structures)\n7. **Best Practices**: Review error handling, testing patterns, concurrency safety, resource management\n\nProvide specific, actionable suggestions while maintaining existing functionality. Include code examples where helpful."
+  }
+}

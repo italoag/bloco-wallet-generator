@@ -226,3 +226,7 @@ make release
 - Use `--threads 1` to test single-threaded behavior
 - Monitor thread utilization statistics in benchmark output
 - Check worker efficiency ratios for load balancing issues
+
+## Guidelines
+
+- Never use the `timeout` command, Mac OS don't have this command. 

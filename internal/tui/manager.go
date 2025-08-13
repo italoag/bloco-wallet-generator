@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/term"
+
+	"bloco-eth/pkg/wallet"
 )
 
 // TUIManager handles TUI capability detection and management
@@ -24,20 +26,6 @@ type TUICapabilities struct {
 	TerminalWidth   int
 	TerminalHeight  int
 	SupportsResize  bool
-}
-
-// Statistics represents the generation statistics (forward declaration for manager)
-type Statistics struct {
-	Difficulty      float64
-	Probability50   int64
-	CurrentAttempts int64
-	Speed           float64
-	Probability     float64
-	EstimatedTime   time.Duration
-	StartTime       time.Time
-	LastUpdate      time.Time
-	Pattern         string
-	IsChecksum      bool
 }
 
 // StatsManager interface for collecting worker statistics (forward declaration for manager)
@@ -182,20 +170,52 @@ func (tm *TUIManager) ShouldUseTUI() bool {
 		if tuiEnv == "false" || tuiEnv == "0" || tuiEnv == "no" || tuiEnv == "off" {
 			return false
 		}
-		// "true", "1", "yes", "on" enable TUI (but still check other conditions)
-		if tuiEnv == "true" || tuiEnv == "1" || tuiEnv == "yes" || tuiEnv == "on" {
+		// "true", "1", "yes", "on", "force" enable TUI (but still check other conditions)
+		if tuiEnv == "true" || tuiEnv == "1" || tuiEnv == "yes" || tuiEnv == "on" || tuiEnv == "force" {
+			// If forced, skip most other checks except very critical ones
+			if tuiEnv == "force" {
+				return true
+			}
 			// Continue with other checks even if explicitly enabled
 		}
 	}
 
 	// Check if we're in an interactive terminal
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		return false
-	}
-
-	// Check if stdin is also a terminal (for full interactivity)
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return false
+	// For Claude Code and development environments, allow TUI if TERM is set properly
+	isStdoutTerminal := term.IsTerminal(int(os.Stdout.Fd()))
+	isStdinTerminal := term.IsTerminal(int(os.Stdin.Fd()))
+	
+	// If TERM environment suggests we have a capable terminal, allow TUI even without TTY detection
+	termType := strings.ToLower(os.Getenv("TERM"))
+	hasCapableTerminal := termType != "" && termType != "dumb" && 
+		(strings.Contains(termType, "xterm") || strings.Contains(termType, "screen") || 
+		 strings.Contains(termType, "tmux") || strings.Contains(termType, "color"))
+	
+	// In development environments, be more lenient with TUI detection
+	if !isStdoutTerminal && !isStdinTerminal {
+		if os.Getenv("BLOCO_DEBUG") != "" {
+			fmt.Printf("DEBUG TUI: neither stdout nor stdin are terminals, TERM=%s\n", termType)
+		}
+		
+		// If we have a capable terminal environment OR we're in a development setup, allow TUI
+		if !hasCapableTerminal {
+			// Check if we're in a development environment that might support TUI
+			if os.Getenv("VSCODE_INJECTION") != "" || os.Getenv("TERM_PROGRAM") != "" || 
+			   os.Getenv("COLORTERM") != "" || len(os.Getenv("TERM")) > 0 {
+				if os.Getenv("BLOCO_DEBUG") != "" {
+					fmt.Printf("DEBUG TUI: development environment detected, allowing TUI\n")
+				}
+			} else {
+				if os.Getenv("BLOCO_DEBUG") != "" {
+					fmt.Printf("DEBUG TUI: no capable terminal detected, disabling TUI\n")
+				}
+				return false
+			}
+		} else {
+			if os.Getenv("BLOCO_DEBUG") != "" {
+				fmt.Printf("DEBUG TUI: capable terminal environment detected, allowing TUI\n")
+			}
+		}
 	}
 
 	// Check basic terminal capabilities
@@ -203,22 +223,27 @@ func (tm *TUIManager) ShouldUseTUI() bool {
 
 	// Require minimum terminal size for usable TUI
 	if capabilities.TerminalWidth < 40 || capabilities.TerminalHeight < 10 {
+		if os.Getenv("BLOCO_DEBUG") != "" {
+			fmt.Printf("DEBUG TUI: terminal too small (%dx%d)\n", capabilities.TerminalWidth, capabilities.TerminalHeight)
+		}
 		return false
 	}
 
-	// Check for unsupported terminal types
-	termType := strings.ToLower(os.Getenv("TERM"))
-	if termType == "dumb" || termType == "" {
-		return false
-	}
+	// Terminal type already checked above, skip duplicate check
 
 	// Check if we're running in a CI environment
 	if tm.isInCIEnvironment() {
+		if os.Getenv("BLOCO_DEBUG") != "" {
+			fmt.Printf("DEBUG TUI: CI environment detected\n")
+		}
 		return false
 	}
 
 	// Check if output is being redirected
 	if tm.isOutputRedirected() {
+		if os.Getenv("BLOCO_DEBUG") != "" {
+			fmt.Printf("DEBUG TUI: output is redirected\n")
+		}
 		return false
 	}
 
@@ -252,7 +277,7 @@ func (tm *TUIManager) isOutputRedirected() bool {
 }
 
 // CreateProgressModel creates a progress TUI model
-func (tm *TUIManager) CreateProgressModel(stats *Statistics, statsManager StatsManager) tea.Model {
+func (tm *TUIManager) CreateProgressModel(stats *wallet.GenerationStats, statsManager StatsManager) tea.Model {
 	return NewProgressModel(stats, statsManager)
 }
 
@@ -262,7 +287,7 @@ func (tm *TUIManager) CreateBenchmarkModel() tea.Model {
 }
 
 // CreateStatsModel creates a statistics TUI model
-func (tm *TUIManager) CreateStatsModel(stats *Statistics) tea.Model {
+func (tm *TUIManager) CreateStatsModel(stats *wallet.GenerationStats) tea.Model {
 	return NewStatsModel(stats)
 }
 

@@ -54,3 +54,4 @@ make build
 - Run benchmarks before and after changes to detect performance regressions
 - For CLI enhancements, measure startup time and memory usage
 - Verify that new dependencies don't significantly impact performance
+- We are working on Mac OS, command `timeout` don't exists never try to use it!
