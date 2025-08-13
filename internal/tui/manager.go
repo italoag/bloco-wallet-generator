@@ -180,16 +180,20 @@ func (tm *TUIManager) ShouldUseTUI() bool {
 		}
 	}
 
+	// Check terminal type first - hard block on unsuitable terminals
+	termType := strings.ToLower(os.Getenv("TERM"))
+	if termType == "" || termType == "dumb" {
+		return false
+	}
+	
 	// Check if we're in an interactive terminal
 	// For Claude Code and development environments, allow TUI if TERM is set properly
 	isStdoutTerminal := term.IsTerminal(int(os.Stdout.Fd()))
 	isStdinTerminal := term.IsTerminal(int(os.Stdin.Fd()))
 	
 	// If TERM environment suggests we have a capable terminal, allow TUI even without TTY detection
-	termType := strings.ToLower(os.Getenv("TERM"))
-	hasCapableTerminal := termType != "" && termType != "dumb" && 
-		(strings.Contains(termType, "xterm") || strings.Contains(termType, "screen") || 
-		 strings.Contains(termType, "tmux") || strings.Contains(termType, "color"))
+	hasCapableTerminal := strings.Contains(termType, "xterm") || strings.Contains(termType, "screen") || 
+		strings.Contains(termType, "tmux") || strings.Contains(termType, "color")
 	
 	// In development environments, be more lenient with TUI detection
 	if !isStdoutTerminal && !isStdinTerminal {

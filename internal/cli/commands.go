@@ -94,9 +94,9 @@ func (app *Application) addGlobalFlags() {
 
 // createWorkerPool creates an optimized worker pool
 func (app *Application) createWorkerPool(poolManager *crypto.PoolManager, validator *validation.AddressValidator) (worker.WorkerPool, error) {
-	// Use simple pool that mimics the working monolithic version
-	simplePool := worker.NewSimplePool(app.config.Worker.ThreadCount)
-	return simplePool, nil
+	// Use worker pool that mimics the working monolithic version
+	pool := worker.NewPool(app.config.Worker.ThreadCount)
+	return pool, nil
 }
 
 // generateWallet is the main command handler for wallet generation
@@ -825,17 +825,8 @@ func (app *Application) runBenchmark(cmd *cobra.Command, args []string) error {
 
 // runBenchmarkTUI runs benchmark with TUI interface
 func (app *Application) runBenchmarkTUI(ctx context.Context, attempts int, duration time.Duration, detailed bool) error {
-	// Create components
-	poolManager := crypto.NewPoolManager(crypto.DefaultPoolConfig())
-	checksumValidator := crypto.NewChecksumValidator(poolManager)
-	validator := validation.NewAddressValidator(checksumValidator)
-
 	// Create worker pool
-	workerPool := worker.NewManagedWorkerPool(
-		app.config.Worker,
-		poolManager,
-		validator,
-	)
+	workerPool := worker.NewPool(app.config.Worker.ThreadCount)
 
 	// Start worker pool
 	if err := workerPool.Start(); err != nil {
@@ -884,17 +875,8 @@ func (app *Application) runBenchmarkText(ctx context.Context, attempts int, dura
 	fmt.Printf("Duration: %v\n", duration)
 	fmt.Printf("Threads: %d\n\n", app.config.Worker.ThreadCount)
 
-	// Create components
-	poolManager := crypto.NewPoolManager(crypto.DefaultPoolConfig())
-	checksumValidator := crypto.NewChecksumValidator(poolManager)
-	validator := validation.NewAddressValidator(checksumValidator)
-
 	// Create worker pool
-	workerPool := worker.NewManagedWorkerPool(
-		app.config.Worker,
-		poolManager,
-		validator,
-	)
+	workerPool := worker.NewPool(app.config.Worker.ThreadCount)
 
 	// Start worker pool
 	if err := workerPool.Start(); err != nil {

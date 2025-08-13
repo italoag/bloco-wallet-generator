@@ -20,8 +20,7 @@ type WorkerPool interface {
 	GetStatsCollector() *StatsCollector
 }
 
-// Ensure both implementations satisfy the interface
+// Ensure all implementations satisfy the interface
 var (
-	_ WorkerPool = (*ManagedWorkerPool)(nil)
-	_ WorkerPool = (*AntsWorkerPool)(nil)
+	_ WorkerPool = (*Pool)(nil)
 )

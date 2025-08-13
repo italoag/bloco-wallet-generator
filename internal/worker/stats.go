@@ -5,7 +5,45 @@ import (
 	"math"
 	"sync"
 	"time"
+	
+	"bloco-eth/pkg/wallet"
 )
+
+// WorkerStats holds statistics for individual workers
+type WorkerStats struct {
+	WorkerID   int       `json:"worker_id"`
+	Attempts   int64     `json:"attempts"`
+	Speed      float64   `json:"speed"`
+	LastUpdate time.Time `json:"last_update"`
+	IsHealthy  bool      `json:"is_healthy"`
+	ErrorCount int       `json:"error_count"`
+	LastError  string    `json:"last_error,omitempty"`
+}
+
+// WorkerHealth represents health information for a worker
+type WorkerHealth struct {
+	WorkerID      int           `json:"worker_id"`
+	IsHealthy     bool          `json:"is_healthy"`
+	LastHeartbeat time.Time     `json:"last_heartbeat"`
+	ErrorCount    int           `json:"error_count"`
+	LastError     string        `json:"last_error,omitempty"`
+	Uptime        time.Duration `json:"uptime"`
+}
+
+// WorkItem represents a unit of work for the worker pool
+type WorkItem struct {
+	Criteria  wallet.GenerationCriteria `json:"criteria"`
+	BatchSize int                       `json:"batch_size"`
+	ID        string                    `json:"id"`
+}
+
+// WorkResult represents the result of processing a work item
+type WorkResult struct {
+	Result   *wallet.GenerationResult `json:"result"`
+	WorkerID int                      `json:"worker_id"`
+	ItemID   string                   `json:"item_id"`
+	Found    bool                     `json:"found"`
+}
 
 // StatsCollector collects and aggregates statistics from multiple workers
 type StatsCollector struct {
