@@ -1,6 +1,6 @@
 # Bloco Wallet Generator
 
-A high-performance CLI tool for generating Ethereum bloco wallets with custom prefixes and suffixes, built in Go using the Cobra framework with enhanced Fang integration for improved user experience.
+A high-performance CLI tool for generating Ethereum bloco wallets with custom prefixes and suffixes, built in Go with automatic wallet logging and EIP-55 checksum support.
 
 ## Features
 
@@ -14,10 +14,10 @@ A high-performance CLI tool for generating Ethereum bloco wallets with custom pr
 - 🏁 Performance benchmarking tools with multi-threading support
 - 📐 Probability calculations and success predictions
 - 🔧 **IMPLEMENTED**: Configurable thread count with auto-detection
-- 🎨 **NEW**: Enhanced CLI interface with Fang integration for improved visual presentation
-- ⚡ **NEW**: Graceful signal handling (Ctrl+C) for safe operation interruption
-- 📖 **NEW**: Improved help text formatting and command examples
-- 🎯 **NEW**: Enhanced error messages and user feedback
+- 📁 **NEW**: Automatic wallet logging to timestamped files
+- 🔍 **NEW**: Complete EIP-55 checksum implementation
+- ⚡ **NEW**: Real-time statistics collection from workers
+- 📊 **NEW**: Streamlined Pool architecture for better performance
 
 ## Installation
 
@@ -58,26 +58,24 @@ make test
 make build-all
 ```
 
-## Enhanced CLI Experience
+## Key Features
 
-This tool now features **Charmbracelet Fang integration** for an enhanced command-line experience:
+### Wallet Logging
+- **Automatic Logging**: All generated wallets are automatically saved to timestamped log files
+- **Daily Files**: Creates new log files with format `wallets-YYYYMMDD.log`
+- **Complete Information**: Logs address, public key, private key, and creation timestamp
+- **Thread-safe**: Safe logging from multiple worker threads
 
-### Visual Enhancements
-- **Improved Help Text**: Better formatted help output with clear sections and examples
-- **Enhanced Command Examples**: Multi-line examples with proper formatting and syntax highlighting
-- **Better Error Messages**: Clear, styled error messages with helpful suggestions
-- **Consistent Styling**: Professional appearance across all commands and outputs
+### EIP-55 Checksum Support
+- **Complete Implementation**: Full EIP-55 checksum validation and generation
+- **Case-sensitive Patterns**: Support for mixed-case address patterns
+- **Proper Validation**: Validates both pattern matching and checksum requirements
 
-### Signal Handling
-- **Graceful Interruption**: Press `Ctrl+C` to safely stop long-running operations
-- **Clean Shutdown**: Proper cleanup and resource management when interrupted
-- **Context Cancellation**: Operations respond immediately to interruption signals
-- **Safe Exit**: No data corruption or hanging processes when stopping operations
-
-### Interactive Features
-- **Enhanced Progress Display**: Better visual feedback during wallet generation
-- **Improved Statistics**: Clearer presentation of difficulty analysis and benchmarks
-- **User-Friendly Prompts**: Better guidance for complex operations
+### Performance Optimization
+- **Streamlined Architecture**: Simplified Pool implementation for better performance
+- **Real-time Statistics**: Live statistics collection from all worker threads
+- **Multi-threading**: Parallel processing with configurable thread count
+- **Context Cancellation**: Proper cancellation support for long-running operations
 
 ## Usage
 
@@ -99,7 +97,7 @@ This tool now features **Charmbracelet Fang integration** for an enhanced comman
 ./bloco-eth --prefix dead --count 5
 
 # Generate with checksum validation (case-sensitive) - use shorter patterns
-./bloco-eth --prefix DeaD --checksum
+./bloco-eth --prefix ABC --checksum
 
 # Show detailed progress during generation (4 chars max recommended)
 ./bloco-eth --prefix abcd --progress --count 5
@@ -118,7 +116,7 @@ This tool now features **Charmbracelet Fang integration** for an enhanced comman
 ./bloco-eth stats --prefix abc --suffix 123
 
 # Analyze with checksum validation
-./bloco-eth stats --prefix DeAdBeEf --checksum
+./bloco-eth stats --prefix ABC --checksum
 
 # Check difficulty for just a prefix (safe length)
 ./bloco-eth stats --prefix dead
@@ -134,7 +132,7 @@ This tool now features **Charmbracelet Fang integration** for an enhanced comman
 ./bloco-eth benchmark --attempts 50000 --pattern "fffff"
 
 # Benchmark with checksum validation
-./bloco-eth benchmark --attempts 25000 --pattern "abc" --checksum
+./bloco-eth benchmark --attempts 25000 --pattern "ABC" --checksum
 
 # Multi-threaded benchmark with specific thread count
 ./bloco-eth benchmark --attempts 50000 --pattern "abc" --threads 8
@@ -413,74 +411,55 @@ Output:
 graph TD
     A[CLI Input] --> B[Cobra Command Parser]
     B --> C[Input Validation]
-    C --> D[Thread Detection & Setup]
-    D --> E[WorkerPool Creation]
-    E --> F[Worker 1<br/>Crypto Pool]
-    E --> G[Worker 2<br/>Crypto Pool]
-    E --> H[Worker N<br/>Crypto Pool]
-    F --> I[Generate Private Key]
-    G --> J[Generate Private Key]
-    H --> K[Generate Private Key]
-    I --> L[Derive Address]
-    J --> M[Derive Address]
-    K --> N[Derive Address]
-    L --> O[Validate Pattern]
-    M --> P[Validate Pattern]
-    N --> Q[Validate Pattern]
-    O --> R{Match Found?}
-    P --> R
-    Q --> R
-    R -->|No| S[Continue Generation]
-    R -->|Yes| T[Signal All Workers]
-    T --> U[Apply Checksum]
-    U --> V[Aggregate Statistics]
-    V --> W[Output Result]
-    S --> I
-    S --> J
-    S --> K
+    C --> D[Pool Creation]
+    D --> E[Worker Goroutines]
+    E --> F[Private Key Generation]
+    F --> G[Address Derivation]
+    G --> H[Pattern Validation]
+    H --> I{Match Found?}
+    I -->|No| J[Statistics Update]
+    I -->|Yes| K[Apply EIP-55 Checksum]
+    K --> L[Log to File]
+    L --> M[Return Result]
+    J --> F
 ```
 
 ## Current Implementation Status
 
 ### ✅ Completed Features
-- **Multi-threading Architecture**: Complete WorkerPool and Worker implementation for parallel processing
-- **Object Pooling**: CryptoPool, HasherPool, and BufferPool implemented for memory efficiency
-- **Thread Detection**: Auto-detection of CPU cores with `--threads` flag support
-- **CLI Integration**: Thread count validation and configuration with user-friendly error messages
-- **Memory Optimization**: Reduced garbage collection pressure through object reuse
-- **Cryptographic Optimization**: All crypto functions use object pools to minimize allocations
-- **Security**: Cryptographically secure random number generation with proper cleanup
-- **Thread-safe Statistics**: StatsManager for aggregated performance metrics from multiple workers
-- **Load Balancing**: Work distribution across worker threads via channels
-- **Parallel Benchmarking**: Multi-threaded performance testing with scalability analysis
-- **Progress Management**: Thread-safe progress tracking and display with ProgressManager
-- **Thread Metrics**: Performance monitoring, efficiency calculation, and speedup analysis
-- **Graceful Shutdown**: Coordinated shutdown when matching wallet is found
-- **Thread Validation**: Validates and optimizes thread count based on system capabilities
+- **Streamlined Pool Architecture**: Simple and efficient Pool implementation for parallel processing
+- **Automatic Wallet Logging**: All wallets automatically logged to timestamped files
+- **Complete EIP-55 Support**: Full checksum validation and generation implementation
+- **Real-time Statistics**: Live statistics collection from worker threads
+- **Thread-safe Operations**: Safe concurrent operations with proper synchronization
+- **Context Cancellation**: Proper cancellation support for long-running operations
+- **Multi-threading**: Parallel processing with configurable thread count
+- **Security**: Cryptographically secure random number generation
+- **Performance Optimization**: Efficient worker coordination and minimal overhead
+- **Error Handling**: Comprehensive error handling and validation
 
-### ✅ Advanced Performance Features
-- **Scalability Analysis**: Amdahl's Law calculations for theoretical speedup limits
-- **Thread Efficiency Monitoring**: Real-time efficiency ratios and utilization metrics
-- **Benchmark Comparisons**: Automatic single-thread vs multi-thread performance analysis
-- **Peak Performance Tracking**: Monitors and reports peak throughput across all threads
-- **Load Balancing Metrics**: Thread balance scoring and work distribution analysis
+### ✅ Wallet Management Features
+- **Automatic File Creation**: Creates timestamped log files for each day
+- **Complete Wallet Information**: Logs address, public key, private key, and timestamp
+- **Incremental Logging**: Appends new wallets to existing daily files
+- **Thread-safe Logging**: Safe concurrent logging from multiple workers
+- **Error Resilience**: Continues operation even if logging fails
 
-### 🚧 Remaining Tasks (In Progress)
-- **Enhanced Unit Testing**: Comprehensive tests for parallel components
-- **Integration Testing**: End-to-end tests for multi-threaded wallet generation
-- **Performance Benchmarking**: Extended benchmarks for different thread configurations
-- **Memory Optimization**: Fine-tuning of object pool sizes and garbage collection
-- **Compatibility Testing**: Validation across different platforms and Go versions
+### 🚧 Potential Enhancements
+- **Enhanced Testing**: Additional tests for edge cases and error conditions
+- **Performance Monitoring**: Extended metrics and monitoring capabilities
+- **Configuration Options**: Additional customization options for logging and generation
+- **Documentation**: Enhanced documentation and usage examples
 
 ### 📋 Current Behavior
-- **Default Threading**: Auto-detects and uses all available CPU cores (`--threads 0`)
-- **Manual Control**: Supports manual thread count specification with validation
-- **Performance Scaling**: Achieves near-linear speedup (8x on 8-core systems)
-- **Thread Efficiency**: Maintains 90%+ efficiency across different workloads
-- **Memory Efficiency**: Object pools significantly reduce memory allocations
-- **Progress Display**: Thread-safe aggregated progress from all workers
-- **Statistics Collection**: Real-time performance metrics and efficiency monitoring
-- **Backward Compatibility**: All existing functionality remains fully compatible
+- **Default Threading**: Uses specified thread count with validation (minimum 1)
+- **Automatic Logging**: All generated wallets logged to daily timestamped files
+- **EIP-55 Checksum**: Complete support for checksum validation and generation
+- **Real-time Stats**: Live statistics updates from all worker threads
+- **Context Cancellation**: Proper cancellation support for operations
+- **Thread Safety**: Safe concurrent operations across all components
+- **Error Handling**: Graceful error handling with continued operation
+- **Performance**: Efficient parallel processing with minimal overhead
 
 ## Performance Considerations
 
@@ -582,15 +561,13 @@ Test graceful interruption with these **safe** commands:
 
 ### Core Components
 
-1. **Multi-threaded Architecture**
-   - **WorkerPool**: Manages multiple worker threads with work distribution via channels
-   - **Worker**: Individual thread with dedicated crypto resources and local statistics
-   - **StatsManager**: Thread-safe aggregation of performance data from all workers
-   - **Object Pools**: CryptoPool, HasherPool, and BufferPool for memory optimization
-   - **ProgressManager**: Thread-safe progress tracking with real-time updates
-   - **ThreadMetrics**: Performance monitoring, efficiency calculation, and speedup analysis
-   - **ThreadValidation**: Validates and optimizes thread count based on system capabilities
-   - **Graceful Shutdown**: Coordinated shutdown across all workers when match is found
+1. **Pool Architecture**
+   - **Pool**: Simple and efficient worker pool implementation
+   - **Worker Goroutines**: Individual goroutines for parallel wallet generation
+   - **StatsCollector**: Real-time statistics collection from all workers
+   - **WalletLogger**: Automatic logging of generated wallets to timestamped files
+   - **Context Management**: Proper cancellation and timeout handling
+   - **Thread Safety**: Mutex-protected shared state and safe concurrent operations
 
 2. **Cryptographic Functions**
    - secp256k1 elliptic curve operations via `github.com/ethereum/go-ethereum/crypto`
@@ -609,14 +586,12 @@ Test graceful interruption with these **safe** commands:
    - **Thread-safe implementation** for concurrent validation
 
 5. **Performance Optimizations**
-   - **CPU Auto-detection**: Automatically detects all available CPU cores with validation
-   - **Object Pools**: CryptoPool, HasherPool, and BufferPool for ~70% reduction in allocations
-   - **Load Balancing**: Work distribution via channels with balanced worker utilization
-   - **Memory Efficiency**: Minimizes garbage collection through strategic object reuse
-   - **Multi-threading**: Near-linear speedup scaling (up to 8x on 8-core systems)
-   - **Thread-safe Statistics**: Real-time aggregated performance metrics with efficiency monitoring
-   - **Scalability Analysis**: Amdahl's Law calculations for theoretical performance limits
-   - **Peak Performance Tracking**: Monitors maximum throughput across all worker threads
+   - **Parallel Processing**: Multiple worker goroutines for concurrent generation
+   - **Real-time Statistics**: Live statistics collection and aggregation
+   - **Efficient Coordination**: Minimal overhead worker coordination
+   - **Context Cancellation**: Fast response to cancellation requests
+   - **Thread Safety**: Proper synchronization without performance penalties
+   - **Memory Efficiency**: Efficient memory usage patterns
 
 ### Error Handling
 
@@ -668,14 +643,12 @@ func handleGenerateWallet(w http.ResponseWriter, r *http.Request) {
 ## Dependencies
 
 - **github.com/spf13/cobra**: CLI framework for command structure
-- **github.com/charmbracelet/fang**: Enhanced CLI experience and signal handling
 - **github.com/ethereum/go-ethereum/crypto**: Ethereum cryptographic functions
 - **golang.org/x/crypto/sha3**: Keccak-256 hashing implementation
 - **crypto/rand**: Secure random number generation
-- **hash**: Standard library interface for hash functions (used in object pooling)
-- **sync**: Standard library for thread synchronization and object pooling
-- **runtime**: Standard library for CPU detection and system information
-- **context**: Standard library for cancellation and signal handling
+- **sync**: Standard library for thread synchronization
+- **context**: Standard library for cancellation and timeout handling
+- **time**: Standard library for timing and timestamps
 
 ## Testing Status
 
@@ -686,11 +659,11 @@ func handleGenerateWallet(w http.ResponseWriter, r *http.Request) {
 - **Basic Integration**: Tests for single-threaded wallet generation
 
 ### 🚧 Tests In Progress
-- **Multi-threading Components**: Unit tests for WorkerPool, Worker, and StatsManager
-- **Object Pooling**: Tests for CryptoPool, HasherPool, and BufferPool efficiency
+- **Pool Components**: Unit tests for Pool and StatsCollector
+- **Wallet Logging**: Tests for WalletLogger functionality
+- **EIP-55 Checksum**: Tests for checksum validation and generation
 - **Thread Safety**: Race condition tests and concurrent access validation
-- **Performance Benchmarks**: Extended benchmarks for different thread configurations
-- **Integration Testing**: End-to-end tests for parallel wallet generation
+- **Integration Testing**: End-to-end tests for wallet generation and logging
 
 ### Running Tests
 ```bash

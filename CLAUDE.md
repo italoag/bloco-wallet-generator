@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a high-performance Ethereum bloco wallet generator built in Go. It generates Ethereum wallets with custom prefixes and/or suffixes using multi-threaded parallel processing for optimal performance.
+This is a high-performance Ethereum bloco wallet generator built in Go. It generates Ethereum wallets with custom prefixes and/or suffixes using multi-threaded parallel processing for optimal performance. Features automatic wallet logging, EIP-55 checksum support, and comprehensive statistics collection.
 
 ## Key Commands
 
@@ -49,11 +49,16 @@ make stats-test # Test statistics functionality
 # Generate wallet with specific thread count
 ./bloco-eth --prefix abc --threads 8
 
+# Generate wallet with EIP-55 checksum validation
+./bloco-eth --prefix ABC --checksum --threads 4
+
 # Analyze pattern difficulty
 ./bloco-eth stats --prefix deadbeef --suffix 123
 
 # Run performance benchmark
 ./bloco-eth benchmark --attempts 10000 --pattern "abc" --threads 8
+
+# All generated wallets are automatically logged to wallets-YYYYMMDD.log
 ```
 
 ## Architecture Overview
@@ -61,18 +66,19 @@ make stats-test # Test statistics functionality
 ### Core Components
 
 1. **Multi-threaded Architecture**
-   - `WorkerPool` (worker_pool.go): Manages multiple worker threads for parallel processing
-   - `Worker` (worker.go): Individual worker thread with dedicated crypto resources
-   - `StatsManager` (stats_manager.go): Thread-safe statistics aggregation across workers
+   - `Pool` (pool.go): Streamlined worker pool with integrated statistics collection
+   - `StatsCollector` (stats.go): Thread-safe statistics aggregation across workers
    - `ProgressManager` (progress_manager.go): Real-time progress display management
-   - `ThreadMetrics` (thread_metrics.go): Thread performance monitoring and efficiency calculations
-   - `ThreadValidation` (thread_validation.go): Thread count validation and CPU detection
+   - `WalletLogger` (logger.go): Automatic wallet logging to daily files
+   - `ThreadMetrics`: Thread performance monitoring and efficiency calculations
+   - `ThreadValidation`: Thread count validation and CPU detection
 
-2. **Object Pooling System**
-   - `CryptoPool`: Reuses cryptographic structures (private keys, ECDSA keys, big.Int)
-   - `HasherPool`: Reuses Keccak256 hash instances
-   - `BufferPool`: Reuses byte buffers and string builders
-   - All pools implement secure cleanup of sensitive data
+2. **Wallet Logging System**
+   - `WalletLogger`: Automatic logging of all generated wallets
+   - Daily log files with timestamp (`wallets-YYYYMMDD.log`)
+   - Comprehensive data: address, public key, private key, attempts, duration
+   - Thread-safe logging with proper file handling and cleanup
+   - Incremental logging for multiple sessions per day
 
 3. **Terminal User Interface (TUI) System**
    - `TUIManager` (tui/manager.go): Terminal capability detection and TUI coordination
@@ -82,26 +88,29 @@ make stats-test # Test statistics functionality
    - `Utils` (tui/utils.go): TUI utility functions and helpers
 
 4. **Core Generation Logic**
-   - `generateBlocoWallet()`: Main wallet generation with statistics
-   - `privateToAddress()`: Optimized private key to address conversion using pools
+   - `GenerateWalletWithContext()`: Main wallet generation with context cancellation
    - `isValidBlocoAddress()`: Pattern matching with checksum validation
-   - `toChecksumAddress()`: EIP-55 checksum formatting
+   - `toChecksumAddress()`: Complete EIP-55 checksum implementation
+   - `isEIP55Checksum()`: Validates EIP-55 checksum patterns
+   - Integrated statistics collection during generation
 
 5. **Statistics and Analysis**
+   - `StatsCollector`: Real-time statistics collection from workers
+   - `WorkerStats`: Individual worker performance metrics
+   - `AggregatedStats`: Combined statistics across all threads
+   - `PerformanceMetrics`: Detailed performance analysis and efficiency
    - `computeDifficulty()`: Calculates generation difficulty based on pattern length and checksum
    - `computeProbability()`: Probability calculations for success estimates
-   - `Statistics` struct: Real-time progress tracking with ETA calculations
-   - `BenchmarkResult`: Performance metrics collection
 
 ### File Structure
-- `main.go`: CLI interface, main application logic, and core algorithms
-- `worker_pool.go`: Multi-threaded worker pool implementation
-- `worker.go`: Individual worker thread implementation  
-- `stats_manager.go`: Thread-safe statistics aggregation
-- `progress_manager.go`: Progress display management
-- `thread_metrics.go`: Thread performance monitoring
-- `thread_validation.go`: Thread count validation
-- `tui/`: Terminal User Interface components with Bubble Tea integration
+- `main.go`: CLI interface and main application entry point
+- `internal/worker/pool.go`: Streamlined worker pool implementation
+- `internal/worker/stats.go`: Comprehensive statistics collection system
+- `internal/worker/interface.go`: Worker pool interface definitions
+- `pkg/wallet/types.go`: Wallet data structures and validation
+- `pkg/wallet/logger.go`: Automatic wallet logging system
+- `internal/cli/commands.go`: CLI command implementations
+- `internal/tui/`: Terminal User Interface components with Bubble Tea integration
 - `*_test.go`: Comprehensive test suite for all components
 
 ## Technical Details
@@ -116,25 +125,30 @@ make stats-test # Test statistics functionality
 
 ### Performance Optimizations
 - **Multi-threading**: Linear scaling with CPU cores (up to 8x performance improvement)
-- **Object Pooling**: Minimizes garbage collection pressure and memory allocations
+- **Real-time Statistics**: Worker performance monitoring with 100ms updates
 - **Thread-safe Operations**: Proper synchronization without performance penalties
 - **CPU Auto-detection**: Automatically uses all available CPU cores by default
+- **EIP-55 Checksum**: Optimized checksum validation and generation
+- **Automatic Logging**: Non-blocking wallet logging with minimal performance impact
 
 ### Thread Safety
-- All cryptographic operations use worker-local object pools
+- All cryptographic operations are worker-local
 - Statistics are aggregated through thread-safe channels
 - Graceful shutdown coordination when wallet is found
+- Thread-safe wallet logging with mutex protection
+- Context-based cancellation for clean shutdown
 - No shared mutable state between workers
 
 ## Testing Strategy
 
 ### Test Categories
-- **Unit Tests**: Individual function testing (main_test.go)
-- **Integration Tests**: End-to-end wallet generation (worker_test.go)
-- **Performance Tests**: Multi-threading efficiency (pool_test.go)
-- **Statistics Tests**: Progress and metrics accuracy (stats_manager_test.go, progress_manager_test.go)
+- **Unit Tests**: Individual function testing (pool_test.go)
+- **Integration Tests**: End-to-end wallet generation and logging
+- **Performance Tests**: Multi-threading efficiency and statistics collection
+- **Statistics Tests**: Real-time metrics accuracy and aggregation
 - **TUI Tests**: Terminal interface components (tui/*_test.go)
-- **Thread Tests**: Metrics and validation testing (thread_*_test.go)
+- **Checksum Tests**: EIP-55 validation and generation accuracy
+- **Logging Tests**: Wallet logging functionality and file handling
 
 ### Running Tests
 ```bash
@@ -160,9 +174,11 @@ make benchmark-test # Benchmark testing
 
 - Uses cryptographically secure random number generation (`crypto/rand`)
 - Proper secp256k1 elliptic curve cryptography
-- EIP-55 checksum validation support
-- Secure cleanup of private key data in object pools
+- Complete EIP-55 checksum validation and generation
+- Secure wallet logging with proper file permissions
 - No shared cryptographic state between workers
+- Thread-safe operations prevent race conditions
+- Context cancellation prevents resource leaks
 
 ## Common Patterns
 
@@ -173,16 +189,19 @@ make benchmark-test # Benchmark testing
 4. Implement validation and core logic in `Run` function
 
 ### Extending Statistics
-1. Add fields to `Statistics` struct
-2. Update `newStatistics()` constructor
-3. Modify `update()` method for real-time calculations
+1. Add fields to `WorkerStats` or `AggregatedStats` struct
+2. Update worker statistics collection in `pool.go`
+3. Modify `StatsCollector` aggregation logic
 4. Update display functions for new metrics
+5. Ensure thread-safe access to new statistics
 
 ### Performance Optimization
-- Always use object pools for frequently allocated structures
-- Implement worker-local resources to avoid contention
+- Use worker-local resources to avoid contention
+- Implement non-blocking statistics collection
 - Use channels for thread-safe communication
+- Monitor worker efficiency and thread utilization
 - Profile with `go tool pprof` when making performance changes
+- Optimize EIP-55 checksum calculations for performance
 
 ### Working with TUI Components
 - TUI system automatically detects terminal capabilities
