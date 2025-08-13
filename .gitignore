@@ -2,3 +2,6 @@ bloco-eth
 build/
 bloco-eth
 .kiro/specs/.DS_Store
+.kiro/
+.crush/
+.claude/
