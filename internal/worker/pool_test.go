@@ -28,12 +28,12 @@ func TestNewPool(t *testing.T) {
 		{
 			name:        "zero threads", 
 			threadCount: 0,
-			expectError: false, // Should handle gracefully
+			expectError: false, // Should handle gracefully (converts to 1)
 		},
 		{
 			name:        "negative threads",
 			threadCount: -1,
-			expectError: false, // Should handle gracefully
+			expectError: false, // Should handle gracefully (converts to 1)
 		},
 	}
 
@@ -45,8 +45,12 @@ func TestNewPool(t *testing.T) {
 				t.Fatal("NewPool() returned nil")
 			}
 			
-			if pool.threadCount != tt.threadCount {
-				t.Errorf("NewPool() threadCount = %v, expected %v", pool.threadCount, tt.threadCount)
+			expectedThreadCount := tt.threadCount
+			if tt.threadCount <= 0 {
+				expectedThreadCount = 1 // Pool converts invalid values to 1
+			}
+			if pool.threadCount != expectedThreadCount {
+				t.Errorf("NewPool() threadCount = %v, expected %v", pool.threadCount, expectedThreadCount)
 			}
 			
 			if pool.isRunning {
