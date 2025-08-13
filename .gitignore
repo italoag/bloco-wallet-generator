@@ -1,7 +1,7 @@
 bloco-eth
 build/
-bloco-eth
-.kiro/specs/.DS_Store
+.DS_Store
 .kiro/
 .crush/
 .claude/
+*.log

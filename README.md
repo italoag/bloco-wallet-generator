@@ -265,39 +265,39 @@ Output:
    • Checksum: false
    • Count: 1 wallets
    • Progress: true
-   • Threads: 8 (detected, using parallel processing)
+   • Threads: 8
+   • Auto-logging: wallets-20241201.log
 
 📊 Difficulty Analysis:
    • Difficulty: 16 777 216
    • 50% probability: 11 629 080 attempts
-   • Estimated time (50% chance): ~6m 27s (single-threaded)
+   • Estimated time (50% chance): ~6m 27s
 ═══════════════════════════════════════════════════════════════
 
 🔄 Generating wallet 1/1...
 
 🎯 Generating bloco wallet with pattern: cafe****************************beef
-📊 Difficulty: 16 777 216 | 50% probability: 11 629 080 attempts
+📊 Real-time stats: 2 845 672 attempts | 48,203 addr/s | Workers: 8
 
-[████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 23.45% | 2 845 672 attempts | 48,203 addr/s | Difficulty: 16 777 216 | ETA: 3m 12s
 ✅ Success! Found matching address in 2 845 672 attempts
-🧵 Thread utilization: 92.5% efficiency
-⚡ Peak performance: 52,184 addr/s
+⚡ Final speed: 52,184 addr/s
+📁 Wallet logged to: wallets-20241201.log
 
 ✅ Wallet 1 generated successfully!
    📍 Address:     0xCafe1234567890ABCDef1234567890ABCDefbeef
-   🔑 Private Key: 0xa1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
+   🔑 Public Key:  04a1b2c3d4e5f6789012345678901234567890abcdef...
+   🔑 Private Key: a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
    🎲 Attempts:    2 845 672
    ⏱️  Time:        59.1s
    ⚡ Speed:       48,203 addr/s
-   📈 Probability: 23.45%
 
 🏁 Generation Summary
 ═══════════════════════════════════════════════════════════════
 ✅ Successful wallets: 1/1
 🎲 Total attempts: 2 845 672
 ⏱️  Total time: 59.1s
-📊 Average attempts per wallet: 2845672
 ⚡ Overall speed: 48,203 addr/s
+📁 All wallets logged to: wallets-20241201.log
 ═══════════════════════════════════════════════════════════════
 ```
 
@@ -359,16 +359,13 @@ Shows comprehensive examples and usage patterns:
     bloco-eth benchmark --pattern dead --attempts 25000                 
                                                                             
     # Benchmark with checksum validation (more CPU intensive)               
-    bloco-eth benchmark --pattern AbCdEf --checksum --attempts 10000        
+    bloco-eth benchmark --pattern ABC --checksum --attempts 10000        
                                                                             
     # Benchmark with specific thread count                                  
     bloco-eth benchmark --threads 8 --attempts 20000                        
                                                                             
-    # Compare performance across different thread counts                    
-    bloco-eth benchmark --compare-threads --attempts 15000                  
-                                                                            
     # Intensive benchmark for performance analysis                          
-    bloco-eth benchmark --pattern cafe --attempts 100000 --compare-threads  
+    bloco-eth benchmark --pattern cafe --attempts 100000 --threads 4  
 ```
 
 ### Performance Benchmark
@@ -397,9 +394,8 @@ Output:
 📊 Speed range: 383,136 - 418,728 addr/s
 📏 Speed std dev: ±9,640 addr/s
 🧵 Thread metrics:
-   • Single-thread equivalent: ~50,245 addr/s
-   • Multi-thread speedup: 8.0x
-   • Thread efficiency: 100% (perfect scaling)
+   • Thread utilization: 95.2%
+   • Worker efficiency: 98.1%
    • Peak performance: 425,640 addr/s
 💻 Platform: Go go1.21+ (8 CPU cores utilized)
 ═══════════════════════════════════════════════════════════════
@@ -481,15 +477,14 @@ The difficulty of finding a bloco address increases exponentially with the lengt
 4. **Use progress flag** (`--progress`) for moderate difficulty generations to see real-time metrics
 5. **Leverage multi-threading** with `--threads` flag (auto-detects CPU cores by default)
 6. **Optimal thread count** is usually equal to your CPU core count (auto-detected)
-7. **For very difficult patterns**, multi-threading provides near-linear speedup (up to 8x)
-8. **Monitor thread efficiency** in benchmark results to optimize performance
-9. **Object pooling** significantly reduces memory allocations and improves performance
-10. **For maximum performance**, run on machines with higher core counts
+7. **For very difficult patterns**, multi-threading provides significant speedup
+8. **Monitor statistics** during generation to track performance
+9. **All generated wallets** are automatically logged to timestamped files
+10. **EIP-55 checksum** support for case-sensitive address patterns
 11. **Thread efficiency** typically remains above 90% for most workloads
-12. **Use benchmark command** to test optimal thread count for your system
-13. **Memory optimization** through object pools reduces GC pressure by ~70%
-14. **Peak performance** is typically achieved with thread count = CPU cores
-15. **Scalability analysis** shows theoretical limits based on Amdahl's Law
+12. **Use benchmark command** to test performance on your system
+13. **Real-time statistics** provide live feedback during generation
+14. **Context cancellation** allows for clean operation termination
 
 ### Safe Pattern Length Guidelines
 
@@ -500,51 +495,46 @@ The difficulty of finding a bloco address increases exponentially with the lengt
 | 4 characters | Hard | Hours | ⚠️ Use with caution |
 | 5+ characters | Extreme | Days/Weeks/Years | ❌ **AVOID** - Impractical |
 
-### Enhanced Error Handling
+### Wallet File Structure
 
-The Fang integration provides improved error messages and user guidance:
-
-```bash
-# Invalid input example
-./bloco-eth
-```
-
-Output:
-```
-❌ Error: At least one of --prefix or --suffix must be specified
-💡 Use --help for usage examples
-```
+The automatic logging feature creates structured log files:
 
 ```bash
-# Invalid hex characters
-./bloco-eth --prefix xyz123
+# Example log file: wallets-20241201.log
 ```
 
-Output:
+Content format:
 ```
-❌ Error: Invalid hex character in prefix: 'x'
-💡 Valid hex characters: 0-9, a-f, A-F
+=== Bloco Wallet Generation Log ===
+Generated on: 2024-12-01 15:30:22
+
+[2024-12-01 15:30:22] Wallet #1
+Address: 0xABC1234567890abcdef1234567890abcdef123456
+Public Key: 04a1b2c3d4e5f6789012345678901234567890abcdef...
+Private Key: a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
+
+[2024-12-01 15:31:45] Wallet #2
+Address: 0xABC9876543210fedcba9876543210fedcba987654
+Public Key: 048f7e6d5c4b3a29187654321098765432109876543...
+Private Key: 8f7e6d5c4b3a291876543210987654321098765432109876543210987654
 ```
 
-### Signal Handling Examples
+### Wallet Logging Examples
 
-Test graceful interruption with these **safe** commands:
+All generated wallets are automatically logged:
 
 ```bash
-# Moderate difficulty wallet generation (press Ctrl+C to test)
-./bloco-eth --prefix abcd --count 5 --progress
+# Generate wallets - automatically logged to wallets-20241201.log
+./bloco-eth --prefix abc --count 5
 
-# Long-running benchmark (press Ctrl+C to test)  
-./bloco-eth benchmark --attempts 50000 --pattern abc
-
-# The application will:
-# - Respond immediately to Ctrl+C
-# - Display current progress
-# - Clean up resources properly
-# - Exit with appropriate status code
+# Generated wallets are saved with complete information:
+# - Ethereum address (with proper checksum if requested)
+# - Public key (uncompressed format)
+# - Private key (hex format)
+# - Creation timestamp
 ```
 
-⚠️ **Critical Warning**: Never use prefixes longer than 4 characters for signal handling tests! Patterns like `abcdef` can take days or weeks to complete.
+💾 **Automatic Logging**: All wallets are automatically saved to daily timestamped files in the format `wallets-YYYYMMDD.log`.
 
 ### Security Considerations
 
@@ -552,8 +542,8 @@ Test graceful interruption with these **safe** commands:
 - ✅ Implements proper secp256k1 elliptic curve cryptography
 - ✅ Supports EIP-55 checksum validation
 - ✅ Private keys are generated using `crypto/rand`
-- ✅ **NEW**: Graceful signal handling prevents data corruption
-- ✅ **NEW**: Proper resource cleanup on interruption
+- ✅ **NEW**: Automatic wallet logging with timestamped files
+- ✅ **NEW**: Complete EIP-55 checksum support
 - ⚠️ **Always verify generated addresses before use**
 - ⚠️ **Keep private keys secure and never share them**
 
@@ -722,24 +712,25 @@ Monitor generation performance using the built-in statistics:
 
 ⚠️ **Never use patterns longer than 4 characters** - they are impractical and can take days/weeks/years to complete, even on high-performance hardware.
 
-### Fang Integration Issues
+💾 **All generated wallets are automatically logged** to daily files with complete information including address, public and private keys.
 
-If you experience issues with the enhanced CLI features:
+### Logging Issues
 
-1. **Help text not displaying properly**
-   - Ensure your terminal supports ANSI colors and formatting
-   - Try running in a different terminal emulator
+If you experience issues with wallet logging:
 
-2. **Signal handling not working**
-   - Fang automatically handles `SIGINT` (Ctrl+C) and `SIGKILL`
-   - The application should respond immediately to interruption signals
-   - If hanging, check for terminal compatibility issues
+1. **Log files not created**
+   - Ensure you have write permissions in the current directory
+   - Check available disk space
 
-3. **Enhanced formatting issues**
-   - The application gracefully degrades if Fang features are unavailable
-   - Core functionality remains intact even if visual enhancements fail
+2. **Logging failures**
+   - The application continues operation even if logging fails
+   - Warning messages are displayed for logging errors
+   - Core wallet generation functionality remains intact
 
-4. **Build issues with Fang dependency**
-   - Ensure Go 1.21+ is installed
-   - Run `go mod tidy` to resolve the Fang dependency
-   - Check that `github.com/charmbracelet/fang` is accessible
+3. **File permissions**
+   - Ensure the application can create and write to log files
+   - Check directory permissions if running in restricted environments
+
+4. **EIP-55 checksum issues**
+   - Verify pattern case matches exactly when using `--checksum`
+   - Use uppercase patterns for better checksum compatibility
