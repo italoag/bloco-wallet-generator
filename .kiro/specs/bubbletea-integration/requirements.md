@@ -33,7 +33,7 @@ This feature adds Charmbracelet Bubbletea TUI (Terminal User Interface) support 
 ### Requirement 3
 
 **User Story:** As a user generating wallets with progress tracking, I want an animated progress bar with real-time statistics, so that I can monitor generation progress with better visual feedback.
-
+    
 #### Acceptance Criteria
 
 1. WHEN the user runs wallet generation with `--progress` flag THEN the system SHALL display an animated progress bar using Bubbletea progress components
