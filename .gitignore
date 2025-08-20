@@ -5,3 +5,4 @@ build/
 .crush/
 .claude/
 *.log
+references/
