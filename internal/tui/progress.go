@@ -213,13 +213,13 @@ func (m ProgressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Add new wallet result to the list
 		m.walletResults = append(m.walletResults, msg.Result)
 		m.showResults = true
-		
+
 		// Increment completed wallets count
 		m.completedWallets = len(m.walletResults)
 
 		// Update the table with new data
 		m.updateResultsTable()
-		
+
 		// Update progress to show completion
 		if m.totalWallets > 0 {
 			progressPercent := float64(m.completedWallets) / float64(m.totalWallets)
@@ -237,7 +237,7 @@ func (m ProgressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd := m.progress.SetPercent(progressPercent)
 			return m, cmd
 		}
-		
+
 		return m, nil
 
 	case QuitMsg:
@@ -498,15 +498,16 @@ func (m *ProgressModel) updateResultsTable() {
 		} else {
 			// Success row - format address and private key for better display
 			address := result.Address
-			if len(address) > 40 {
-				address = address[:40] // Truncate if too long for display
-			}
-			
+			// Don't truncate Ethereum addresses (42 chars) - they need to show the full suffix
+			// if len(address) > 40 {
+			//     address = address[:40] // Truncate if too long for display
+			// }
+
 			privateKey := result.PrivateKey
 			if len(privateKey) > 60 {
 				privateKey = privateKey[:60] + "..." // Truncate long private keys
 			}
-			
+
 			rows = append(rows, table.Row{
 				fmt.Sprintf("%d", result.Index),
 				address,

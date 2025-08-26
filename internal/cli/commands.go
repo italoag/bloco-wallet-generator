@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spf13/cobra"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spf13/cobra"
 
 	"bloco-eth/internal/config"
 	"bloco-eth/internal/crypto"
@@ -78,6 +78,7 @@ func (app *Application) addGlobalFlags() {
 	flags.StringP("prefix", "p", "", "Address prefix to match")
 	flags.StringP("suffix", "s", "", "Address suffix to match")
 	flags.BoolP("checksum", "c", false, "Enable EIP-55 checksum validation")
+	flags.Bool("case-sensitive", false, "Enable case-sensitive pattern matching (requires --checksum)")
 	flags.IntP("count", "n", 1, "Number of wallets to generate")
 
 	// Performance parameters
@@ -155,13 +156,13 @@ func (app *Application) generateSingleWallet(
 	// Check if TUI should be used for progress
 	tuiManager := tui.NewTUIManager()
 	useTUI := app.config.TUI.Enabled && showProgress && !app.config.CLI.QuietMode
-	
+
 	// Debug TUI decision
 	if os.Getenv("BLOCO_DEBUG") != "" {
-		fmt.Printf("DEBUG TUI: config.TUI.Enabled=%v, showProgress=%v, QuietMode=%v, ShouldUseTUI=%v\n", 
+		fmt.Printf("DEBUG TUI: config.TUI.Enabled=%v, showProgress=%v, QuietMode=%v, ShouldUseTUI=%v\n",
 			app.config.TUI.Enabled, showProgress, app.config.CLI.QuietMode, tuiManager.ShouldUseTUI())
 	}
-	
+
 	if useTUI && tuiManager.ShouldUseTUI() {
 		return app.generateSingleWalletTUI(ctx, workerPool, criteria)
 	}
@@ -179,7 +180,7 @@ func (app *Application) generateSingleWalletTUI(
 	// Create TUI statistics
 	difficulty := calculateDifficulty(criteria)
 	probability50 := calculateProbability50(difficulty)
-	
+
 	tuiStats := &wallet.GenerationStats{
 		Difficulty:      difficulty,
 		Probability50:   probability50,
@@ -196,17 +197,17 @@ func (app *Application) generateSingleWalletTUI(
 	// Create stats adapter
 	statsCollector := workerPool.GetStatsCollector()
 	statsAdapter := &StatsManagerAdapter{statsCollector}
-	
+
 	// Create TUI progress model
 	tuiManager := tui.NewTUIManager()
 	progressModel := tuiManager.CreateProgressModel(tuiStats, statsAdapter)
-	
+
 	// Create TUI program (without alt screen for compatibility)
 	program := tea.NewProgram(progressModel)
 
 	// Channel for wallet results (like in monolithic version)
 	walletResultsChan := make(chan tui.WalletResult, 1)
-	
+
 	// Channel to signal shutdown
 	shutdownChan := make(chan struct{})
 	var shutdownOnce sync.Once // Ensure channel is closed only once
@@ -226,10 +227,10 @@ func (app *Application) generateSingleWalletTUI(
 			case <-ticker.C:
 				// Get current stats and send progress update
 				stats := statsCollector.GetAggregatedStats()
-				
+
 				// Calculate probability based on current attempts
 				probability := utils.CalculateProbability(difficulty, stats.TotalAttempts) * 100
-				
+
 				// Calculate estimated time
 				var estimatedTime time.Duration
 				if probability50 > 0 && stats.TotalSpeed > 0 {
@@ -259,12 +260,12 @@ func (app *Application) generateSingleWalletTUI(
 					shutdownOnce.Do(func() { close(shutdownChan) })
 					return
 				}
-				
+
 				// Send wallet result to TUI
 				program.Send(tui.WalletResultMsg{
 					Result: walletResult,
 				})
-				
+
 				// Send completion flag immediately
 				program.Send(tui.ProgressMsg{
 					Attempts:         0, // Will be updated by stats
@@ -278,7 +279,7 @@ func (app *Application) generateSingleWalletTUI(
 					ProgressPercent:  100.0,
 					IsComplete:       true,
 				})
-				
+
 				// Mark as complete and send quit after showing result
 				go func() {
 					time.Sleep(2 * time.Second)
@@ -291,20 +292,20 @@ func (app *Application) generateSingleWalletTUI(
 	// Start wallet generation in background (like in monolithic version)
 	var result *wallet.GenerationResult
 	var genErr error
-	
+
 	go func() {
 		// Small delay to let TUI initialize
 		time.Sleep(200 * time.Millisecond)
-		
+
 		genResult, err := workerPool.GenerateWalletWithContext(ctx, criteria)
 		if err != nil {
 			genErr = err
 			shutdownOnce.Do(func() { close(shutdownChan) })
 			return
 		}
-		
+
 		result = genResult
-		
+
 		// Send wallet result to TUI through channel
 		select {
 		case walletResultsChan <- tui.WalletResult{
@@ -317,7 +318,7 @@ func (app *Application) generateSingleWalletTUI(
 		}:
 		case <-ctx.Done():
 		}
-		
+
 		// Close the channel to signal completion
 		close(walletResultsChan)
 	}()
@@ -390,13 +391,13 @@ func (app *Application) generateMultipleWallets(
 	// Check if TUI should be used for multiple wallets
 	tuiManager := tui.NewTUIManager()
 	useTUI := app.config.TUI.Enabled && showProgress && !app.config.CLI.QuietMode
-	
+
 	// Debug TUI decision for multiple wallets
 	if os.Getenv("BLOCO_DEBUG") != "" {
-		fmt.Printf("DEBUG TUI (multiple): config.TUI.Enabled=%v, showProgress=%v, QuietMode=%v, ShouldUseTUI=%v\n", 
+		fmt.Printf("DEBUG TUI (multiple): config.TUI.Enabled=%v, showProgress=%v, QuietMode=%v, ShouldUseTUI=%v\n",
 			app.config.TUI.Enabled, showProgress, app.config.CLI.QuietMode, tuiManager.ShouldUseTUI())
 	}
-	
+
 	if useTUI && tuiManager.ShouldUseTUI() {
 		return app.generateMultipleWalletsTUI(ctx, workerPool, criteria, count)
 	}
@@ -415,7 +416,7 @@ func (app *Application) generateMultipleWalletsTUI(
 	// Create TUI statistics
 	difficulty := calculateDifficulty(criteria)
 	probability50 := calculateProbability50(difficulty)
-	
+
 	tuiStats := &wallet.GenerationStats{
 		Difficulty:      difficulty,
 		Probability50:   probability50,
@@ -432,11 +433,11 @@ func (app *Application) generateMultipleWalletsTUI(
 	// Create stats adapter
 	statsCollector := workerPool.GetStatsCollector()
 	statsAdapter := &StatsManagerAdapter{statsCollector}
-	
+
 	// Create TUI progress model
 	tuiManager := tui.NewTUIManager()
 	progressModel := tuiManager.CreateProgressModel(tuiStats, statsAdapter)
-	
+
 	// Create TUI program (without alt screen for compatibility)
 	program := tea.NewProgram(progressModel)
 
@@ -444,7 +445,7 @@ func (app *Application) generateMultipleWalletsTUI(
 	walletResultsChan := make(chan tui.WalletResult, count)
 	shutdownChan := make(chan struct{})
 	var shutdownOnce sync.Once // Ensure channel is closed only once
-	
+
 	// Track generation progress (with mutex to prevent race conditions)
 	var completedWallets int
 	var completedMutex sync.Mutex
@@ -465,17 +466,17 @@ func (app *Application) generateMultipleWalletsTUI(
 			case <-ticker.C:
 				// Get current stats and send progress update
 				stats := statsCollector.GetAggregatedStats()
-				
+
 				// Calculate progress as percentage of wallets completed (thread-safe)
 				completedMutex.Lock()
 				currentCompleted := completedWallets
 				completedMutex.Unlock()
-				
+
 				progressPercent := (float64(currentCompleted) / float64(count)) * 100.0
-				
+
 				// Calculate probability based on progress
 				probability := progressPercent
-				
+
 				// Calculate estimated time
 				var estimatedTime time.Duration
 				if currentCompleted > 0 && stats.TotalSpeed > 0 {
@@ -515,22 +516,22 @@ func (app *Application) generateMultipleWalletsTUI(
 					shutdownOnce.Do(func() { close(shutdownChan) })
 					return
 				}
-				
+
 				// Send wallet result to TUI first
 				program.Send(tui.WalletResultMsg{
 					Result: walletResult,
 				})
-				
+
 				// Get current completion status (thread-safe)
 				completedMutex.Lock()
 				currentCompletedForMsg := completedWallets
 				allCompleted := completedWallets >= count
 				completedMutex.Unlock()
-				
+
 				// Send progress update showing current completion
 				program.Send(tui.ProgressMsg{
 					Attempts:         0, // Will be updated by main ticker
-					Speed:            0, // Will be updated by main ticker  
+					Speed:            0, // Will be updated by main ticker
 					Probability:      (float64(currentCompletedForMsg) / float64(count)) * 100.0,
 					EstimatedTime:    0,
 					Difficulty:       difficulty,
@@ -540,7 +541,7 @@ func (app *Application) generateMultipleWalletsTUI(
 					ProgressPercent:  (float64(currentCompletedForMsg) / float64(count)) * 100.0,
 					IsComplete:       allCompleted,
 				})
-				
+
 				if allCompleted {
 					// All wallets completed, quit after showing results
 					go func() {
@@ -554,13 +555,13 @@ func (app *Application) generateMultipleWalletsTUI(
 
 	// Start wallet generation in background (like in monolithic version)
 	var genErr error
-	
+
 	go func() {
 		// Small delay to let TUI initialize
 		time.Sleep(200 * time.Millisecond)
-		
+
 		results = make([]*wallet.GenerationResult, 0, count)
-		
+
 		for i := 0; i < count; i++ {
 			select {
 			case <-ctx.Done():
@@ -569,7 +570,7 @@ func (app *Application) generateMultipleWalletsTUI(
 				return
 			default:
 			}
-			
+
 			result, err := workerPool.GenerateWalletWithContext(ctx, criteria)
 			if err != nil {
 				// Send error result to TUI
@@ -581,21 +582,21 @@ func (app *Application) generateMultipleWalletsTUI(
 				case <-ctx.Done():
 					return
 				}
-				
+
 				// Update completed wallets count even for errors (thread-safe)
 				completedMutex.Lock()
 				completedWallets++
 				completedMutex.Unlock()
 				continue
 			}
-			
+
 			results = append(results, result)
-			
+
 			// Update completed wallets count (thread-safe)
 			completedMutex.Lock()
 			completedWallets++
 			completedMutex.Unlock()
-			
+
 			// Send successful wallet result to TUI
 			select {
 			case walletResultsChan <- tui.WalletResult{
@@ -610,7 +611,7 @@ func (app *Application) generateMultipleWalletsTUI(
 				return
 			}
 		}
-		
+
 		// Close the wallet results channel when all wallets are generated
 		// This signals completion to the progress goroutine
 		close(walletResultsChan)
@@ -718,7 +719,7 @@ func (app *Application) showStats(cmd *cobra.Command, args []string) error {
 	// Check if TUI should be used
 	tuiManager := tui.NewTUIManager()
 	useTUI, _ := cmd.Flags().GetBool("tui")
-	
+
 	if useTUI && tuiManager.ShouldUseTUI() {
 		return app.showStatsTUI(criteria, difficulty, probability50)
 	}
@@ -814,7 +815,7 @@ func (app *Application) runBenchmark(cmd *cobra.Command, args []string) error {
 	// Check if TUI should be used
 	tuiManager := tui.NewTUIManager()
 	useTUI, _ := cmd.Flags().GetBool("tui")
-	
+
 	if useTUI && tuiManager.ShouldUseTUI() {
 		return app.runBenchmarkTUI(ctx, attempts, duration, detailed)
 	}
@@ -983,7 +984,7 @@ func formatBool(b bool) string {
 // Placeholder implementations for display functions
 func (app *Application) displayWalletResult(result *wallet.GenerationResult, showProgress bool) error {
 	fmt.Printf("✅ Wallet generated successfully!\n")
-	fmt.Printf("Address: 0x%s\n", result.Wallet.Address)
+	fmt.Printf("Address: %s\n", result.Wallet.Address)
 	fmt.Printf("Private Key: %s\n", result.Wallet.PrivateKey)
 	fmt.Printf("Attempts: %s\n", formatLargeNumber(result.Attempts))
 	fmt.Printf("Duration: %v\n", result.Duration)
@@ -1004,7 +1005,7 @@ func (app *Application) displayMultipleWalletResults(results []*wallet.Generatio
 	// Display individual wallets
 	for i, result := range results {
 		fmt.Printf("Wallet %d:\n", i+1)
-		fmt.Printf("  Address: 0x%s\n", result.Wallet.Address)
+		fmt.Printf("  Address: %s\n", result.Wallet.Address)
 
 		// Only show private key if not in quiet mode
 		if !app.config.CLI.QuietMode {
@@ -1471,7 +1472,7 @@ type StatsManagerAdapter struct {
 func (sma *StatsManagerAdapter) GetMetrics() tui.ThreadMetrics {
 	stats := sma.collector.GetAggregatedStats()
 	perfMetrics := sma.collector.GetPerformanceMetrics()
-	
+
 	return tui.ThreadMetrics{
 		EfficiencyRatio: perfMetrics.EfficiencyRatio,
 		TotalSpeed:      stats.TotalSpeed,
