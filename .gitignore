@@ -3,5 +3,8 @@ build/
 .kiro/
 .crush/
 .claude/
+.idea/
+.vscode/
+*.iml
 *.log
 references/
