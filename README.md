@@ -18,6 +18,9 @@ A high-performance CLI tool for generating Ethereum bloco wallets with custom pr
 - 🔍 **NEW**: Complete EIP-55 checksum implementation
 - ⚡ **NEW**: Real-time statistics collection from workers
 - 📊 **NEW**: Streamlined Pool architecture for better performance
+- 🔑 **NEW**: Automatic KeyStore V3 file generation for easy import
+- 🛡️ **NEW**: Secure password generation with complexity validation
+- 📦 **NEW**: Compatible with MetaMask, geth, and other Ethereum clients
 
 ## Installation
 
@@ -66,6 +69,14 @@ make build-all
 - **Complete Information**: Logs address, public key, private key, and creation timestamp
 - **Thread-safe**: Safe logging from multiple worker threads
 
+### KeyStore V3 Generation
+- **Automatic KeyStore Files**: Generates encrypted KeyStore V3 JSON files for each wallet
+- **Secure Encryption**: Uses scrypt or PBKDF2 key derivation with AES-128-CTR encryption
+- **Password Protection**: Automatically generates secure passwords with complexity validation
+- **Client Compatibility**: Compatible with MetaMask, geth, MyEtherWallet, and other Ethereum clients
+- **Configurable Output**: Customizable output directory and encryption algorithms
+- **Atomic Operations**: Thread-safe file operations with atomic writes
+
 ### EIP-55 Checksum Support
 - **Complete Implementation**: Full EIP-55 checksum validation and generation
 - **Case-sensitive Patterns**: Support for mixed-case address patterns
@@ -84,7 +95,7 @@ make build-all
 #### Generate Bloco Wallets
 
 ```bash
-# Generate a wallet with prefix 'abc'
+# Generate a wallet with prefix 'abc' (includes keystore files by default)
 ./bloco-eth --prefix abc
 
 # Generate a wallet with suffix '123'
@@ -107,6 +118,18 @@ make build-all
 
 # NEW: Auto-detect and use all CPU cores (default behavior)
 ./bloco-eth --prefix abc --threads 0
+
+# NEW: Generate without keystore files
+./bloco-eth --prefix abc --no-keystore
+
+# NEW: Specify custom keystore directory
+./bloco-eth --prefix abc --keystore-dir ./my-keys
+
+# NEW: Use PBKDF2 instead of scrypt for keystore encryption
+./bloco-eth --prefix abc --keystore-kdf pbkdf2
+
+# NEW: Generate with custom keystore settings
+./bloco-eth --prefix abc --keystore-dir ./secure-keys --keystore-kdf scrypt --count 3
 ```
 
 #### Analyze Pattern Difficulty
@@ -153,6 +176,9 @@ make build-all
 | `--checksum` | | Enable EIP-55 checksum validation | false |
 | `--progress` | | Show detailed progress during generation | false |
 | `--threads` | `-t` | **NEW**: Number of threads to use (0 = auto-detect all CPUs) | 0 |
+| `--keystore-dir` | | **NEW**: Directory to save keystore files | "./keystores" |
+| `--no-keystore` | | **NEW**: Disable keystore file generation | false |
+| `--keystore-kdf` | | **NEW**: KDF algorithm (scrypt, pbkdf2) | "scrypt" |
 
 #### Statistics Command
 
@@ -267,6 +293,7 @@ Output:
    • Progress: true
    • Threads: 8
    • Auto-logging: wallets-20241201.log
+   • KeyStore: ./keystores (scrypt)
 
 📊 Difficulty Analysis:
    • Difficulty: 16 777 216
@@ -282,6 +309,7 @@ Output:
 ✅ Success! Found matching address in 2 845 672 attempts
 ⚡ Final speed: 52,184 addr/s
 📁 Wallet logged to: wallets-20241201.log
+🔐 Keystore saved to: ./keystores
 
 ✅ Wallet 1 generated successfully!
    📍 Address:     0xCafe1234567890ABCDef1234567890ABCDefbeef
@@ -290,6 +318,7 @@ Output:
    🎲 Attempts:    2 845 672
    ⏱️  Time:        59.1s
    ⚡ Speed:       48,203 addr/s
+   🔐 KeyStore:    ./keystores/0xcafe1234567890abcdef1234567890abcdefbeef.json
 
 🏁 Generation Summary
 ═══════════════════════════════════════════════════════════════
@@ -298,8 +327,78 @@ Output:
 ⏱️  Total time: 59.1s
 ⚡ Overall speed: 48,203 addr/s
 📁 All wallets logged to: wallets-20241201.log
+🔐 KeyStore files saved to: ./keystores
 ═══════════════════════════════════════════════════════════════
 ```
+
+### KeyStore V3 File Generation
+
+The tool automatically generates encrypted KeyStore V3 JSON files for each wallet, making it easy to import into Ethereum clients:
+
+```bash
+# Generate wallet with keystore files (default behavior)
+./bloco-eth --prefix abc
+
+# Custom keystore directory
+./bloco-eth --prefix abc --keystore-dir ./my-secure-keys
+
+# Use PBKDF2 instead of scrypt (faster but less secure)
+./bloco-eth --prefix abc --keystore-kdf pbkdf2
+
+# Disable keystore generation
+./bloco-eth --prefix abc --no-keystore
+```
+
+#### KeyStore File Structure
+
+Generated files include:
+- **KeyStore JSON**: `0x{address}.json` - Encrypted private key in KeyStore V3 format
+- **Password File**: `0x{address}.pwd` - Secure password for the keystore
+
+Example keystore file (`0xabc1234567890abcdef1234567890abcdef123456.json`):
+```json
+{
+  "address": "abc1234567890abcdef1234567890abcdef123456",
+  "crypto": {
+    "cipher": "aes-128-ctr",
+    "ciphertext": "encrypted_private_key_data",
+    "cipherparams": {
+      "iv": "initialization_vector"
+    },
+    "kdf": "scrypt",
+    "kdfparams": {
+      "dklen": 32,
+      "n": 262144,
+      "p": 1,
+      "r": 8,
+      "salt": "random_salt"
+    },
+    "mac": "message_authentication_code"
+  },
+  "id": "unique-uuid",
+  "version": 3
+}
+```
+
+#### Importing into Ethereum Clients
+
+**MetaMask:**
+1. Open MetaMask → Settings → Advanced → Import Account
+2. Select "JSON File" and upload the `.json` keystore file
+3. Enter the password from the corresponding `.pwd` file
+
+**geth:**
+```bash
+# Copy keystore file to geth keystore directory
+cp ./keystores/*.json ~/.ethereum/keystore/
+
+# Import using geth
+geth account import ./keystores/0xabc123....json
+```
+
+**MyEtherWallet:**
+1. Go to "Access My Wallet" → "Keystore File"
+2. Upload the `.json` file and enter the password
 
 ### Difficulty Analysis
 
@@ -486,6 +585,24 @@ The difficulty of finding a bloco address increases exponentially with the lengt
 13. **Real-time statistics** provide live feedback during generation
 14. **Context cancellation** allows for clean operation termination
 
+### Environment Variables
+
+You can configure keystore settings using environment variables:
+
+```bash
+# Enable/disable keystore generation
+export BLOCO_KEYSTORE_ENABLED=true
+
+# Set keystore output directory
+export BLOCO_KEYSTORE_DIR=./my-keys
+
+# Set KDF algorithm (scrypt or pbkdf2)
+export BLOCO_KEYSTORE_KDF=pbkdf2
+
+# Generate wallet with environment settings
+./bloco-eth --prefix abc
+```
+
 ### Safe Pattern Length Guidelines
 
 | Pattern Length | Difficulty Level | Typical Time | Recommendation |
@@ -544,8 +661,14 @@ All generated wallets are automatically logged:
 - ✅ Private keys are generated using `crypto/rand`
 - ✅ **NEW**: Automatic wallet logging with timestamped files
 - ✅ **NEW**: Complete EIP-55 checksum support
+- ✅ **NEW**: Secure KeyStore V3 encryption with scrypt/PBKDF2
+- ✅ **NEW**: Automatic secure password generation (12+ chars, mixed complexity)
+- ✅ **NEW**: Atomic file operations with secure permissions (600)
+- ✅ **NEW**: Thread-safe keystore operations with retry mechanisms
 - ⚠️ **Always verify generated addresses before use**
-- ⚠️ **Keep private keys secure and never share them**
+- ⚠️ **Keep private keys and keystore passwords secure**
+- ⚠️ **Store keystore files and passwords separately**
+- ⚠️ **Backup keystore files and passwords securely**
 
 ## Technical Implementation Details
 
@@ -635,7 +758,12 @@ func handleGenerateWallet(w http.ResponseWriter, r *http.Request) {
 - **github.com/spf13/cobra**: CLI framework for command structure
 - **github.com/ethereum/go-ethereum/crypto**: Ethereum cryptographic functions
 - **golang.org/x/crypto/sha3**: Keccak-256 hashing implementation
+- **golang.org/x/crypto/scrypt**: Scrypt key derivation function for keystore encryption
+- **golang.org/x/crypto/pbkdf2**: PBKDF2 key derivation function for keystore encryption
+- **github.com/google/uuid**: UUID generation for keystore files
 - **crypto/rand**: Secure random number generation
+- **crypto/aes**: AES encryption for keystore files
+- **crypto/hmac**: HMAC for keystore integrity verification
 - **sync**: Standard library for thread synchronization
 - **context**: Standard library for cancellation and timeout handling
 - **time**: Standard library for timing and timestamps
@@ -734,3 +862,41 @@ If you experience issues with wallet logging:
 4. **EIP-55 checksum issues**
    - Verify pattern case matches exactly when using `--checksum`
    - Use uppercase patterns for better checksum compatibility
+
+### KeyStore Issues
+
+If you experience issues with keystore generation:
+
+1. **KeyStore files not created**
+   - Check if keystore generation is enabled (default: enabled)
+   - Verify write permissions for the keystore directory
+   - Ensure sufficient disk space is available
+
+2. **Permission denied errors**
+   - Ensure the keystore directory is writable
+   - Check if the directory exists or can be created
+   - Verify file system permissions
+
+3. **Invalid KDF algorithm**
+   - Use only supported algorithms: `scrypt` or `pbkdf2`
+   - Check environment variable `BLOCO_KEYSTORE_KDF` if set
+
+4. **KeyStore import issues**
+   - Verify the JSON file is valid KeyStore V3 format
+   - Ensure you're using the correct password from the `.pwd` file
+   - Check that the keystore file wasn't corrupted during transfer
+
+5. **Performance issues with scrypt**
+   - Consider using `--keystore-kdf pbkdf2` for faster generation
+   - Note that PBKDF2 is faster but slightly less secure than scrypt
+
+### Environment Variable Issues
+
+1. **Environment variables not recognized**
+   - Ensure variables are exported: `export BLOCO_KEYSTORE_ENABLED=true`
+   - Check variable names are correct (case-sensitive)
+   - Verify the shell session has the variables set
+
+2. **Boolean environment variables**
+   - Use `true`/`false`, `1`/`0`, or `yes`/`no`
+   - Case-insensitive: `TRUE`, `True`, `true` all work

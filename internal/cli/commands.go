@@ -55,8 +55,27 @@ func (app *Application) setupCommands() {
 		Use:   "bloco-eth",
 		Short: "High-performance Ethereum wallet generator for custom address patterns",
 		Long: `Bloco-ETH is a high-performance CLI tool for generating Ethereum wallets 
-with custom prefixes and suffixes. It supports EIP-55 checksum validation 
-and multi-threaded generation for optimal performance.`,
+with custom prefixes and suffixes. It supports EIP-55 checksum validation,
+multi-threaded generation for optimal performance, and automatic KeyStore V3
+file generation for easy import into Ethereum clients.
+
+Features:
+  • Custom prefix/suffix pattern matching
+  • EIP-55 checksum validation
+  • Multi-threaded parallel processing
+  • Automatic KeyStore V3 file generation
+  • Compatible with MetaMask, geth, and other Ethereum clients
+  • Real-time progress tracking with TUI interface
+
+Examples:
+  # Generate wallet with prefix "abc" and save keystore files
+  bloco-eth --prefix abc --progress
+
+  # Generate 5 wallets with suffix "def" without keystore files
+  bloco-eth --suffix def --count 5 --no-keystore
+
+  # Generate wallet with custom keystore directory and KDF
+  bloco-eth --prefix 123 --keystore-dir ./my-keys --keystore-kdf pbkdf2`,
 		Version: fmt.Sprintf("%s (commit: %s, built: %s)", app.version, app.gitCommit, app.buildTime),
 		RunE:    app.generateWallet,
 	}
@@ -91,6 +110,11 @@ func (app *Application) addGlobalFlags() {
 	flags.BoolP("quiet", "q", false, "Suppress non-essential output")
 	flags.String("output", "", "Output file for results (default: stdout)")
 	flags.String("format", "text", "Output format (text, json, csv)")
+
+	// KeyStore parameters
+	flags.String("keystore-dir", "./keystores", "Directory to save keystore files")
+	flags.Bool("no-keystore", false, "Disable keystore file generation")
+	flags.String("keystore-kdf", "scrypt", "KDF algorithm for keystore encryption (scrypt, pbkdf2)")
 }
 
 // createWorkerPool creates an optimized worker pool
@@ -305,6 +329,15 @@ func (app *Application) generateSingleWalletTUI(
 		}
 
 		result = genResult
+
+		// Generate and save keystore files if enabled (silent mode for TUI)
+		if app.config.KeyStore.Enabled {
+			if err := app.generateAndSaveKeystoreWithVerbose(genResult.Wallet, false); err != nil {
+				if !app.config.CLI.QuietMode {
+					fmt.Printf("⚠️  Warning: Failed to generate keystore: %v\n", err)
+				}
+			}
+		}
 
 		// Send wallet result to TUI through channel
 		select {
@@ -591,6 +624,15 @@ func (app *Application) generateMultipleWalletsTUI(
 			}
 
 			results = append(results, result)
+
+			// Generate and save keystore files if enabled (silent mode for TUI)
+			if app.config.KeyStore.Enabled {
+				if err := app.generateAndSaveKeystoreWithVerbose(result.Wallet, false); err != nil {
+					if !app.config.CLI.QuietMode {
+						fmt.Printf("⚠️  Warning: Failed to generate keystore for wallet %d: %v\n", i+1, err)
+					}
+				}
+			}
 
 			// Update completed wallets count (thread-safe)
 			completedMutex.Lock()
@@ -938,6 +980,25 @@ func (app *Application) parseFlags(cmd *cobra.Command) error {
 		app.config.TUI.Enabled = false
 	}
 
+	// Parse keystore options
+	if noKeystore, _ := cmd.Flags().GetBool("no-keystore"); noKeystore {
+		app.config.KeyStore.Enabled = false
+	}
+
+	// Only update keystore directory if the flag was explicitly set by the user
+	if cmd.Flags().Changed("keystore-dir") {
+		if keystoreDir, _ := cmd.Flags().GetString("keystore-dir"); keystoreDir != "" {
+			app.config.KeyStore.OutputDir = keystoreDir
+		}
+	}
+
+	// Only update KDF algorithm if the flag was explicitly set by the user
+	if cmd.Flags().Changed("keystore-kdf") {
+		if keystoreKDF, _ := cmd.Flags().GetString("keystore-kdf"); keystoreKDF != "" {
+			app.config.KeyStore.KDFAlgorithm = keystoreKDF
+		}
+	}
+
 	// Validate configuration after updates
 	return app.config.Validate()
 }
@@ -988,6 +1049,16 @@ func (app *Application) displayWalletResult(result *wallet.GenerationResult, sho
 	fmt.Printf("Private Key: %s\n", result.Wallet.PrivateKey)
 	fmt.Printf("Attempts: %s\n", formatLargeNumber(result.Attempts))
 	fmt.Printf("Duration: %v\n", result.Duration)
+
+	// Generate keystore if enabled
+	if app.config.KeyStore.Enabled {
+		if err := app.generateAndSaveKeystore(result.Wallet); err != nil {
+			fmt.Printf("⚠️  Warning: Failed to generate keystore: %v\n", err)
+		} else {
+			fmt.Printf("🔐 Keystore saved to: %s\n", app.config.KeyStore.OutputDir)
+		}
+	}
+
 	return nil
 }
 
@@ -1003,6 +1074,7 @@ func (app *Application) displayMultipleWalletResults(results []*wallet.Generatio
 	fmt.Printf("⚡ Average speed: %.0f addr/s\n\n", float64(totalAttempts)/totalDuration.Seconds())
 
 	// Display individual wallets
+	var keystoreErrors []error
 	for i, result := range results {
 		fmt.Printf("Wallet %d:\n", i+1)
 		fmt.Printf("  Address: %s\n", result.Wallet.Address)
@@ -1019,7 +1091,28 @@ func (app *Application) displayMultipleWalletResults(results []*wallet.Generatio
 			fmt.Printf("  Worker: #%d\n", result.WorkerID)
 		}
 
+		// Generate keystore if enabled
+		if app.config.KeyStore.Enabled {
+			if err := app.generateAndSaveKeystore(result.Wallet); err != nil {
+				keystoreErrors = append(keystoreErrors, err)
+				fmt.Printf("  ⚠️  Keystore: Failed to generate (%v)\n", err)
+			} else {
+				fmt.Printf("  🔐 Keystore: Saved\n")
+			}
+		}
+
 		fmt.Printf("\n")
+	}
+
+	// Show keystore summary
+	if app.config.KeyStore.Enabled {
+		successCount := len(results) - len(keystoreErrors)
+		if successCount > 0 {
+			fmt.Printf("🔐 Keystores saved: %d/%d to %s\n", successCount, len(results), app.config.KeyStore.OutputDir)
+		}
+		if len(keystoreErrors) > 0 {
+			fmt.Printf("⚠️  Keystore errors: %d/%d\n", len(keystoreErrors), len(results))
+		}
 	}
 
 	// Show statistics summary
@@ -1483,4 +1576,40 @@ func (sma *StatsManagerAdapter) GetMetrics() tui.ThreadMetrics {
 func (sma *StatsManagerAdapter) GetPeakSpeed() float64 {
 	stats := sma.collector.GetAggregatedStats()
 	return stats.PeakSpeed
+}
+
+// generateAndSaveKeystore generates and saves a keystore file for the given wallet
+func (app *Application) generateAndSaveKeystore(w *wallet.Wallet) error {
+	return app.generateAndSaveKeystoreWithVerbose(w, app.config.CLI.VerboseOutput)
+}
+
+// generateAndSaveKeystoreWithVerbose generates and saves a keystore file with verbose control
+func (app *Application) generateAndSaveKeystoreWithVerbose(w *wallet.Wallet, verbose bool) error {
+	// Create keystore service configuration
+	keystoreConfig := crypto.KeyStoreConfig{
+		Enabled:         app.config.KeyStore.Enabled,
+		OutputDirectory: app.config.KeyStore.OutputDir,
+		KDF:             app.config.KeyStore.KDFAlgorithm,
+		Cipher:          "aes-128-ctr",
+		MaxRetries:      3,
+		RetryDelay:      100, // 100ms
+	}
+
+	// Create keystore service with controlled verbose logging
+	keystoreService := crypto.NewKeyStoreService(keystoreConfig)
+	keystoreService.SetVerboseMode(verbose)
+
+	// Use retry mechanism for better reliability
+	if err := keystoreService.SaveKeyStoreFilesWithRetry(w.PrivateKey, w.Address); err != nil {
+		// Check if it's a KeyStoreError for better error reporting
+		if ksErr, ok := err.(*crypto.KeyStoreError); ok {
+			if ksErr.UserMessage != "" {
+				return fmt.Errorf("keystore generation failed: %s", ksErr.UserMessage)
+			}
+			return fmt.Errorf("keystore generation failed for address %s: %v", w.Address, err)
+		}
+		return fmt.Errorf("failed to save keystore files for address %s: %w", w.Address, err)
+	}
+
+	return nil
 }

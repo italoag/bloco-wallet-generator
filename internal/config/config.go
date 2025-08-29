@@ -10,10 +10,11 @@ import (
 
 // Config holds all application configuration
 type Config struct {
-	Worker WorkerConfig `yaml:"worker"`
-	TUI    TUIConfig    `yaml:"tui"`
-	Crypto CryptoConfig `yaml:"crypto"`
-	CLI    CLIConfig    `yaml:"cli"`
+	Worker   WorkerConfig   `yaml:"worker"`
+	TUI      TUIConfig      `yaml:"tui"`
+	Crypto   CryptoConfig   `yaml:"crypto"`
+	CLI      CLIConfig      `yaml:"cli"`
+	KeyStore KeyStoreConfig `yaml:"keystore"`
 }
 
 // WorkerConfig contains worker-related configuration
@@ -51,6 +52,15 @@ type CLIConfig struct {
 	QuietMode              bool          `yaml:"quiet_mode"`
 }
 
+// KeyStoreConfig contains keystore generation configuration
+type KeyStoreConfig struct {
+	Enabled      bool   `yaml:"enabled"`
+	OutputDir    string `yaml:"output_dir"`
+	KDFAlgorithm string `yaml:"kdf_algorithm"`
+	CreateDirs   bool   `yaml:"create_dirs"`
+	FileMode     int    `yaml:"file_mode"`
+}
+
 // DefaultConfig returns a configuration with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{
@@ -80,6 +90,13 @@ func DefaultConfig() *Config {
 			ProgressUpdateInterval: 500 * time.Millisecond,
 			VerboseOutput:          false,
 			QuietMode:              false,
+		},
+		KeyStore: KeyStoreConfig{
+			Enabled:      true,
+			OutputDir:    "./keystores",
+			KDFAlgorithm: "scrypt",
+			CreateDirs:   true,
+			FileMode:     0600,
 		},
 	}
 }
@@ -120,6 +137,19 @@ func (c *Config) LoadFromEnvironment() {
 
 	if quiet := os.Getenv("BLOCO_QUIET"); quiet != "" {
 		c.CLI.QuietMode = parseBoolEnv(quiet, c.CLI.QuietMode)
+	}
+
+	// KeyStore configuration
+	if keystoreEnabled := os.Getenv("BLOCO_KEYSTORE_ENABLED"); keystoreEnabled != "" {
+		c.KeyStore.Enabled = parseBoolEnv(keystoreEnabled, c.KeyStore.Enabled)
+	}
+
+	if keystoreDir := os.Getenv("BLOCO_KEYSTORE_DIR"); keystoreDir != "" {
+		c.KeyStore.OutputDir = keystoreDir
+	}
+
+	if keystoreKDF := os.Getenv("BLOCO_KEYSTORE_KDF"); keystoreKDF != "" {
+		c.KeyStore.KDFAlgorithm = keystoreKDF
 	}
 }
 
@@ -176,6 +206,21 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("quiet mode and verbose output are mutually exclusive")
 	}
 
+	// Validate KeyStore configuration
+	if c.KeyStore.OutputDir == "" {
+		return fmt.Errorf("keystore output directory cannot be empty")
+	}
+
+	validKDFAlgorithms := []string{"scrypt", "pbkdf2"}
+	if !contains(validKDFAlgorithms, c.KeyStore.KDFAlgorithm) {
+		return fmt.Errorf("invalid KDF algorithm: %s (valid: %v)",
+			c.KeyStore.KDFAlgorithm, validKDFAlgorithms)
+	}
+
+	if c.KeyStore.FileMode < 0 || c.KeyStore.FileMode > 0777 {
+		return fmt.Errorf("invalid file mode: %o (must be between 0000 and 0777)", c.KeyStore.FileMode)
+	}
+
 	return nil
 }
 
@@ -196,14 +241,29 @@ func (c *Config) ApplyOverrides(overrides ConfigOverrides) {
 	if overrides.QuietMode != nil {
 		c.CLI.QuietMode = *overrides.QuietMode
 	}
+
+	if overrides.KeyStoreEnabled != nil {
+		c.KeyStore.Enabled = *overrides.KeyStoreEnabled
+	}
+
+	if overrides.KeyStoreOutputDir != nil {
+		c.KeyStore.OutputDir = *overrides.KeyStoreOutputDir
+	}
+
+	if overrides.KeyStoreKDF != nil {
+		c.KeyStore.KDFAlgorithm = *overrides.KeyStoreKDF
+	}
 }
 
 // ConfigOverrides represents command-line configuration overrides
 type ConfigOverrides struct {
-	ThreadCount   *int
-	TUIEnabled    *bool
-	VerboseOutput *bool
-	QuietMode     *bool
+	ThreadCount       *int
+	TUIEnabled        *bool
+	VerboseOutput     *bool
+	QuietMode         *bool
+	KeyStoreEnabled   *bool
+	KeyStoreOutputDir *string
+	KeyStoreKDF       *string
 }
 
 // parseBoolEnv parses a boolean environment variable with fallback
