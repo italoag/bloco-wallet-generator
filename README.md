@@ -61,13 +61,20 @@ make test
 make build-all
 ```
 
+## Security Notice
+
+⚠️ **IMPORTANT SECURITY UPDATE**: This version implements secure logging that **NEVER** records sensitive cryptographic data. Previous versions may have logged private keys and other sensitive information. See the [Migration Guide](#migration-from-insecure-logging) below.
+
 ## Key Features
 
-### Wallet Logging
-- **Automatic Logging**: All generated wallets are automatically saved to timestamped log files
-- **Daily Files**: Creates new log files with format `wallets-YYYYMMDD.log`
-- **Complete Information**: Logs address, public key, private key, and creation timestamp
-- **Thread-safe**: Safe logging from multiple worker threads
+### Secure Logging System
+- **Security-First Design**: Logs only non-sensitive operational data (addresses, attempts, duration, thread IDs)
+- **No Sensitive Data**: Never logs private keys, public keys, or cryptographic material
+- **Configurable Levels**: Support for ERROR, WARN, INFO, and DEBUG logging levels
+- **Structured Output**: JSON, text, or structured formats for easy parsing
+- **File Rotation**: Automatic log file rotation with size limits and retention policies
+- **Thread-safe**: Safe concurrent logging from multiple worker threads
+- **Performance Optimized**: Async buffering with minimal impact on generation speed
 
 ### KeyStore V3 Generation
 - **Automatic KeyStore Files**: Generates encrypted KeyStore V3 JSON files for each wallet
@@ -179,6 +186,10 @@ make build-all
 | `--keystore-dir` | | **NEW**: Directory to save keystore files | "./keystores" |
 | `--no-keystore` | | **NEW**: Disable keystore file generation | false |
 | `--keystore-kdf` | | **NEW**: KDF algorithm (scrypt, pbkdf2) | "scrypt" |
+| `--log-level` | | **NEW**: Secure logging level (error, warn, info, debug) | "info" |
+| `--no-logging` | | **NEW**: Disable logging completely | false |
+| `--log-file` | | **NEW**: Log file path (secure logging only) | stdout |
+| `--log-format` | | **NEW**: Log format (text, json, structured) | "text" |
 
 #### Statistics Command
 
@@ -400,6 +411,121 @@ geth account import ./keystores/0xabc123....json
 1. Go to "Access My Wallet" → "Keystore File"
 2. Upload the `.json` file and enter the password
 
+### Secure Logging Configuration
+
+The secure logging system provides comprehensive operational logging without exposing sensitive data:
+
+```bash
+# Basic secure logging (default: INFO level to stdout)
+./bloco-eth --prefix abc
+
+# Debug logging to file for troubleshooting
+./bloco-eth --prefix abc --log-level debug --log-file ./operations.log
+
+# JSON format logging for structured analysis
+./bloco-eth --prefix abc --log-format json --log-file ./operations.json
+
+# Disable logging completely for maximum performance
+./bloco-eth --prefix abc --no-logging
+
+# Custom log rotation settings
+./bloco-eth --prefix abc --log-max-size 50MB --log-max-files 10
+
+# Structured text format with custom buffer size
+./bloco-eth --prefix abc --log-format structured --log-buffer-size 2000
+```
+
+#### What Gets Logged (Safe Data Only)
+
+✅ **Logged Information:**
+- Wallet addresses (public Ethereum addresses)
+- Generation attempts and duration
+- Thread IDs and worker statistics
+- System performance metrics
+- Error messages (sanitized)
+- Operation start/completion events
+- Configuration parameters (non-sensitive)
+
+❌ **Never Logged:**
+- Private keys
+- Public keys
+- Cryptographic seeds or entropy
+- Keystore passwords
+- Any sensitive cryptographic material
+
+#### Log Formats
+
+**Text Format (default):**
+```
+[2024-01-15 10:30:22] INFO: Wallet generated - Address: 0xabc123..., Attempts: 1234, Duration: 2.5s, Thread: 3
+[2024-01-15 10:30:23] INFO: Operation completed - Total wallets: 1, Total time: 2.5s
+```
+
+**JSON Format:**
+```json
+{
+  "timestamp": "2024-01-15T10:30:22Z",
+  "level": "INFO",
+  "message": "Wallet generated",
+  "address": "0xabc123...",
+  "attempts": 1234,
+  "duration_ms": 2500,
+  "thread_id": 3
+}
+```
+
+**Structured Format:**
+```
+timestamp=2024-01-15T10:30:22Z level=INFO msg="Wallet generated" address=0xabc123... attempts=1234 duration_ms=2500 thread_id=3
+```
+
+### Migration from Insecure Logging
+
+⚠️ **CRITICAL SECURITY NOTICE**: Previous versions of this tool may have logged sensitive information including private keys. Follow these steps to secure your system:
+
+#### 1. Identify Old Log Files
+
+Old insecure log files typically have names like:
+- `wallets-YYYYMMDD.log`
+- `wallet-generation.log`
+- Any files containing private keys or public keys
+
+#### 2. Secure Cleanup (IMPORTANT)
+
+```bash
+# Find potentially sensitive log files
+find . -name "*.log" -exec grep -l "Private Key\|Public Key\|0x[a-fA-F0-9]{64}" {} \;
+
+# Securely delete sensitive log files (Linux/macOS)
+find . -name "wallets-*.log" -exec shred -vfz -n 3 {} \;
+
+# Alternative secure deletion (macOS)
+find . -name "wallets-*.log" -exec rm -P {} \;
+
+# Windows (use sdelete or similar secure deletion tool)
+# sdelete -p 3 -s -z C:\path\to\logs\
+```
+
+#### 3. Verify New Secure Logging
+
+After upgrading, verify that new logs contain only safe data:
+
+```bash
+# Generate a test wallet with logging
+./bloco-eth --prefix abc --log-level debug --log-file ./test-secure.log
+
+# Verify no sensitive data is logged
+grep -i "private\|public\|key\|0x[a-fA-F0-9]{64}" ./test-secure.log
+
+# Should return no matches for sensitive data
+```
+
+#### 4. Update Backup Procedures
+
+- Remove old log files from backups
+- Update backup scripts to exclude sensitive log files
+- Implement secure deletion in log rotation scripts
+
 ### Difficulty Analysis
 
 ```bash
@@ -523,7 +649,7 @@ graph TD
 
 ### ✅ Completed Features
 - **Streamlined Pool Architecture**: Simple and efficient Pool implementation for parallel processing
-- **Automatic Wallet Logging**: All wallets automatically logged to timestamped files
+- **Secure Logging System**: Comprehensive logging that never exposes sensitive cryptographic data
 - **Complete EIP-55 Support**: Full checksum validation and generation implementation
 - **Real-time Statistics**: Live statistics collection from worker threads
 - **Thread-safe Operations**: Safe concurrent operations with proper synchronization
@@ -533,12 +659,15 @@ graph TD
 - **Performance Optimization**: Efficient worker coordination and minimal overhead
 - **Error Handling**: Comprehensive error handling and validation
 
-### ✅ Wallet Management Features
-- **Automatic File Creation**: Creates timestamped log files for each day
-- **Complete Wallet Information**: Logs address, public key, private key, and timestamp
-- **Incremental Logging**: Appends new wallets to existing daily files
+### ✅ Secure Logging Features
+- **Security-First Design**: Never logs private keys, public keys, or sensitive data
+- **Multiple Log Levels**: ERROR, WARN, INFO, DEBUG with configurable filtering
+- **Multiple Formats**: Text, JSON, and structured formats for different use cases
+- **File Rotation**: Automatic log rotation with size limits and retention policies
+- **Async Buffering**: High-performance async logging with minimal impact
 - **Thread-safe Logging**: Safe concurrent logging from multiple workers
-- **Error Resilience**: Continues operation even if logging fails
+- **Error Sanitization**: Automatic removal of sensitive data from error messages
+- **Configurable Output**: File or stdout output with customizable settings
 
 ### 🚧 Potential Enhancements
 - **Enhanced Testing**: Additional tests for edge cases and error conditions
@@ -548,7 +677,7 @@ graph TD
 
 ### 📋 Current Behavior
 - **Default Threading**: Uses specified thread count with validation (minimum 1)
-- **Automatic Logging**: All generated wallets logged to daily timestamped files
+- **Secure Logging**: All operations logged securely without sensitive data exposure
 - **EIP-55 Checksum**: Complete support for checksum validation and generation
 - **Real-time Stats**: Live statistics updates from all worker threads
 - **Context Cancellation**: Proper cancellation support for operations
@@ -612,46 +741,49 @@ export BLOCO_KEYSTORE_KDF=pbkdf2
 | 4 characters | Hard | Hours | ⚠️ Use with caution |
 | 5+ characters | Extreme | Days/Weeks/Years | ❌ **AVOID** - Impractical |
 
-### Wallet File Structure
+### Secure Log File Structure
 
-The automatic logging feature creates structured log files:
-
-```bash
-# Example log file: wallets-20241201.log
-```
-
-Content format:
-```
-=== Bloco Wallet Generation Log ===
-Generated on: 2024-12-01 15:30:22
-
-[2024-12-01 15:30:22] Wallet #1
-Address: 0xABC1234567890abcdef1234567890abcdef123456
-Public Key: 04a1b2c3d4e5f6789012345678901234567890abcdef...
-Private Key: a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
-
-[2024-12-01 15:31:45] Wallet #2
-Address: 0xABC9876543210fedcba9876543210fedcba987654
-Public Key: 048f7e6d5c4b3a29187654321098765432109876543...
-Private Key: 8f7e6d5c4b3a291876543210987654321098765432109876543210987654
-```
-
-### Wallet Logging Examples
-
-All generated wallets are automatically logged:
+The secure logging system creates operational log files with only safe data:
 
 ```bash
-# Generate wallets - automatically logged to wallets-20241201.log
+# Example secure log file: operations-20241201.log
+```
+
+Content format (Text):
+```
+[2024-12-01 15:30:22] INFO: Wallet generation started - Pattern: abc***, Threads: 8
+[2024-12-01 15:30:25] INFO: Wallet generated - Address: 0xabc123..., Attempts: 1234, Duration: 2.5s, Thread: 3
+[2024-12-01 15:30:25] INFO: KeyStore saved - Address: 0xabc123..., File: ./keystores/0xabc123....json
+[2024-12-01 15:30:25] INFO: Operation completed - Total wallets: 1, Total time: 2.5s, Success rate: 100%
+```
+
+Content format (JSON):
+```json
+{"timestamp":"2024-12-01T15:30:22Z","level":"INFO","message":"Wallet generated","address":"0xabc123...","attempts":1234,"duration_ms":2500,"thread_id":3}
+{"timestamp":"2024-12-01T15:30:25Z","level":"INFO","message":"Operation completed","total_wallets":1,"total_time_ms":2500,"success_rate":100}
+```
+
+### Secure Logging Examples
+
+All operations are securely logged without sensitive data:
+
+```bash
+# Generate wallets with secure logging (default)
 ./bloco-eth --prefix abc --count 5
 
-# Generated wallets are saved with complete information:
-# - Ethereum address (with proper checksum if requested)
-# - Public key (uncompressed format)
-# - Private key (hex format)
-# - Creation timestamp
+# Logged information includes only:
+# - Ethereum addresses (public information)
+# - Generation attempts and timing
+# - Thread and performance metrics
+# - Operation status and errors (sanitized)
+# - Configuration parameters (non-sensitive)
+
+# NEVER logged:
+# - Private keys, public keys, or cryptographic material
+# - Keystore passwords or sensitive configuration
 ```
 
-💾 **Automatic Logging**: All wallets are automatically saved to daily timestamped files in the format `wallets-YYYYMMDD.log`.
+🔒 **Secure Logging**: All operational data is logged safely without exposing cryptographic secrets.
 
 ### Security Considerations
 
@@ -659,16 +791,19 @@ All generated wallets are automatically logged:
 - ✅ Implements proper secp256k1 elliptic curve cryptography
 - ✅ Supports EIP-55 checksum validation
 - ✅ Private keys are generated using `crypto/rand`
-- ✅ **NEW**: Automatic wallet logging with timestamped files
+- ✅ **NEW**: Secure logging system that NEVER logs sensitive data
 - ✅ **NEW**: Complete EIP-55 checksum support
 - ✅ **NEW**: Secure KeyStore V3 encryption with scrypt/PBKDF2
 - ✅ **NEW**: Automatic secure password generation (12+ chars, mixed complexity)
 - ✅ **NEW**: Atomic file operations with secure permissions (600)
 - ✅ **NEW**: Thread-safe keystore operations with retry mechanisms
+- ✅ **NEW**: Error sanitization prevents sensitive data leaks in logs
+- ✅ **NEW**: Configurable log levels and formats (all secure)
 - ⚠️ **Always verify generated addresses before use**
 - ⚠️ **Keep private keys and keystore passwords secure**
 - ⚠️ **Store keystore files and passwords separately**
 - ⚠️ **Backup keystore files and passwords securely**
+- ⚠️ **Securely delete old log files that may contain sensitive data**
 
 ## Technical Implementation Details
 
@@ -678,7 +813,7 @@ All generated wallets are automatically logged:
    - **Pool**: Simple and efficient worker pool implementation
    - **Worker Goroutines**: Individual goroutines for parallel wallet generation
    - **StatsCollector**: Real-time statistics collection from all workers
-   - **WalletLogger**: Automatic logging of generated wallets to timestamped files
+   - **SecureLogger**: Secure logging system that never exposes sensitive data
    - **Context Management**: Proper cancellation and timeout handling
    - **Thread Safety**: Mutex-protected shared state and safe concurrent operations
 
@@ -778,10 +913,11 @@ func handleGenerateWallet(w http.ResponseWriter, r *http.Request) {
 
 ### 🚧 Tests In Progress
 - **Pool Components**: Unit tests for Pool and StatsCollector
-- **Wallet Logging**: Tests for WalletLogger functionality
+- **Secure Logging**: Tests for SecureLogger functionality and data sanitization
 - **EIP-55 Checksum**: Tests for checksum validation and generation
 - **Thread Safety**: Race condition tests and concurrent access validation
-- **Integration Testing**: End-to-end tests for wallet generation and logging
+- **Security Testing**: Tests to verify no sensitive data appears in logs
+- **Integration Testing**: End-to-end tests for wallet generation and secure logging
 
 ### Running Tests
 ```bash
@@ -840,15 +976,16 @@ Monitor generation performance using the built-in statistics:
 
 ⚠️ **Never use patterns longer than 4 characters** - they are impractical and can take days/weeks/years to complete, even on high-performance hardware.
 
-💾 **All generated wallets are automatically logged** to daily files with complete information including address, public and private keys.
+🔒 **All operations are securely logged** without exposing sensitive cryptographic data. Only addresses, timing, and operational metrics are recorded.
 
-### Logging Issues
+### Secure Logging Issues
 
-If you experience issues with wallet logging:
+If you experience issues with secure logging:
 
 1. **Log files not created**
-   - Ensure you have write permissions in the current directory
+   - Ensure you have write permissions in the target directory
    - Check available disk space
+   - Verify log file path is accessible
 
 2. **Logging failures**
    - The application continues operation even if logging fails
@@ -859,7 +996,21 @@ If you experience issues with wallet logging:
    - Ensure the application can create and write to log files
    - Check directory permissions if running in restricted environments
 
-4. **EIP-55 checksum issues**
+4. **Migration from old logs**
+   - Use the migration guide above to securely delete old sensitive logs
+   - Verify new logs contain only safe operational data
+   - Update backup procedures to exclude old sensitive log files
+
+5. **Verifying secure logging**
+   ```bash
+   # Check for sensitive data patterns (should return no matches)
+   grep -i "private.*key\|public.*key\|0x[a-fA-F0-9]{64}" your-log-file.log
+   
+   # Check for proper secure log format
+   head -20 your-log-file.log
+   ```
+
+6. **EIP-55 checksum issues**
    - Verify pattern case matches exactly when using `--checksum`
    - Use uppercase patterns for better checksum compatibility
 

@@ -58,8 +58,8 @@ func (app *Application) setupCommands() {
 		Short: "High-performance Ethereum wallet generator for custom address patterns",
 		Long: `Bloco-ETH is a high-performance CLI tool for generating Ethereum wallets 
 with custom prefixes and suffixes. It supports EIP-55 checksum validation,
-multi-threaded generation for optimal performance, and automatic KeyStore V3
-file generation for easy import into Ethereum clients.
+multi-threaded generation for optimal performance, automatic KeyStore V3
+file generation, and secure logging that never exposes sensitive data.
 
 Features:
   • Custom prefix/suffix pattern matching
@@ -68,6 +68,8 @@ Features:
   • Automatic KeyStore V3 file generation
   • Compatible with MetaMask, geth, and other Ethereum clients
   • Real-time progress tracking with TUI interface
+  • Secure logging system (never logs private keys or sensitive data)
+  • Configurable log levels, formats, and rotation
 
 Examples:
   # Generate wallet with prefix "abc" and save keystore files
@@ -79,14 +81,17 @@ Examples:
   # Generate wallet with custom keystore directory and KDF
   bloco-eth --prefix 123 --keystore-dir ./my-keys --keystore-kdf pbkdf2
 
-  # Generate wallet with debug logging to file
-  bloco-eth --prefix abc --log-level debug --log-file ./wallet.log
+  # Generate wallet with secure debug logging to file
+  bloco-eth --prefix abc --log-level debug --log-file ./operations.log
 
-  # Generate wallet with JSON logging format
-  bloco-eth --prefix abc --log-format json --log-file ./wallet.json
+  # Generate wallet with JSON logging format (secure)
+  bloco-eth --prefix abc --log-format json --log-file ./operations.json
 
   # Generate wallet with logging completely disabled
-  bloco-eth --prefix abc --no-logging`,
+  bloco-eth --prefix abc --no-logging
+
+  # Generate with custom log rotation settings
+  bloco-eth --prefix abc --log-max-size 50MB --log-max-files 10`,
 		Version: fmt.Sprintf("%s (commit: %s, built: %s)", app.version, app.gitCommit, app.buildTime),
 		RunE:    app.generateWallet,
 	}
@@ -127,11 +132,11 @@ func (app *Application) addGlobalFlags() {
 	flags.Bool("no-keystore", false, "Disable keystore file generation")
 	flags.String("keystore-kdf", "scrypt", "KDF algorithm for keystore encryption (scrypt, pbkdf2)")
 
-	// Logging parameters
-	flags.String("log-level", "info", "Logging level (error, warn, info, debug)")
-	flags.Bool("no-logging", false, "Disable logging completely")
-	flags.String("log-file", "", "Log file path (default: stdout)")
-	flags.String("log-format", "text", "Log format (text, json, structured)")
+	// Secure logging parameters (never logs sensitive data)
+	flags.String("log-level", "info", "Logging level (error, warn, info, debug) - secure logging only")
+	flags.Bool("no-logging", false, "Disable logging completely for maximum performance")
+	flags.String("log-file", "", "Log file path (default: stdout) - only operational data logged")
+	flags.String("log-format", "text", "Log format (text, json, structured) - all formats are secure")
 	flags.Int64("log-max-size", 10*1024*1024, "Maximum log file size in bytes before rotation")
 	flags.Int("log-max-files", 5, "Maximum number of rotated log files to keep")
 	flags.Int("log-buffer-size", 1000, "Buffer size for async logging")
