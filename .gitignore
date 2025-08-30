@@ -1,8 +1,5 @@
 build/
 .DS_Store
-.kiro/
-.crush/
-.claude/
 .idea/
 .vscode/
 *.iml
