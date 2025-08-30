@@ -15,6 +15,7 @@ type Config struct {
 	Crypto   CryptoConfig   `yaml:"crypto"`
 	CLI      CLIConfig      `yaml:"cli"`
 	KeyStore KeyStoreConfig `yaml:"keystore"`
+	Logging  LoggingConfig  `yaml:"logging"`
 }
 
 // WorkerConfig contains worker-related configuration
@@ -61,6 +62,17 @@ type KeyStoreConfig struct {
 	FileMode     int    `yaml:"file_mode"`
 }
 
+// LoggingConfig contains logging configuration
+type LoggingConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	Level       string `yaml:"level"`
+	Format      string `yaml:"format"`
+	OutputFile  string `yaml:"output_file"`
+	MaxFileSize int64  `yaml:"max_file_size"`
+	MaxFiles    int    `yaml:"max_files"`
+	BufferSize  int    `yaml:"buffer_size"`
+}
+
 // DefaultConfig returns a configuration with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{
@@ -97,6 +109,15 @@ func DefaultConfig() *Config {
 			KDFAlgorithm: "scrypt",
 			CreateDirs:   true,
 			FileMode:     0600,
+		},
+		Logging: LoggingConfig{
+			Enabled:     true,
+			Level:       "info",
+			Format:      "text",
+			OutputFile:  "",
+			MaxFileSize: 10 * 1024 * 1024, // 10MB
+			MaxFiles:    5,
+			BufferSize:  1000,
 		},
 	}
 }
@@ -150,6 +171,23 @@ func (c *Config) LoadFromEnvironment() {
 
 	if keystoreKDF := os.Getenv("BLOCO_KEYSTORE_KDF"); keystoreKDF != "" {
 		c.KeyStore.KDFAlgorithm = keystoreKDF
+	}
+
+	// Logging configuration
+	if loggingEnabled := os.Getenv("BLOCO_LOGGING_ENABLED"); loggingEnabled != "" {
+		c.Logging.Enabled = parseBoolEnv(loggingEnabled, c.Logging.Enabled)
+	}
+
+	if logLevel := os.Getenv("BLOCO_LOG_LEVEL"); logLevel != "" {
+		c.Logging.Level = logLevel
+	}
+
+	if logFormat := os.Getenv("BLOCO_LOG_FORMAT"); logFormat != "" {
+		c.Logging.Format = logFormat
+	}
+
+	if logFile := os.Getenv("BLOCO_LOG_FILE"); logFile != "" {
+		c.Logging.OutputFile = logFile
 	}
 }
 
@@ -221,6 +259,31 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid file mode: %o (must be between 0000 and 0777)", c.KeyStore.FileMode)
 	}
 
+	// Validate Logging configuration
+	validLogLevels := []string{"error", "warn", "info", "debug"}
+	if !contains(validLogLevels, c.Logging.Level) {
+		return fmt.Errorf("invalid log level: %s (valid: %v)",
+			c.Logging.Level, validLogLevels)
+	}
+
+	validLogFormats := []string{"text", "json", "structured"}
+	if !contains(validLogFormats, c.Logging.Format) {
+		return fmt.Errorf("invalid log format: %s (valid: %v)",
+			c.Logging.Format, validLogFormats)
+	}
+
+	if c.Logging.MaxFileSize <= 0 {
+		return fmt.Errorf("log max file size must be positive, got %d", c.Logging.MaxFileSize)
+	}
+
+	if c.Logging.MaxFiles < 0 {
+		return fmt.Errorf("log max files must be non-negative, got %d", c.Logging.MaxFiles)
+	}
+
+	if c.Logging.BufferSize < 0 {
+		return fmt.Errorf("log buffer size must be non-negative, got %d", c.Logging.BufferSize)
+	}
+
 	return nil
 }
 
@@ -253,6 +316,22 @@ func (c *Config) ApplyOverrides(overrides ConfigOverrides) {
 	if overrides.KeyStoreKDF != nil {
 		c.KeyStore.KDFAlgorithm = *overrides.KeyStoreKDF
 	}
+
+	if overrides.LoggingEnabled != nil {
+		c.Logging.Enabled = *overrides.LoggingEnabled
+	}
+
+	if overrides.LogLevel != nil {
+		c.Logging.Level = *overrides.LogLevel
+	}
+
+	if overrides.LogFormat != nil {
+		c.Logging.Format = *overrides.LogFormat
+	}
+
+	if overrides.LogFile != nil {
+		c.Logging.OutputFile = *overrides.LogFile
+	}
 }
 
 // ConfigOverrides represents command-line configuration overrides
@@ -264,6 +343,10 @@ type ConfigOverrides struct {
 	KeyStoreEnabled   *bool
 	KeyStoreOutputDir *string
 	KeyStoreKDF       *string
+	LoggingEnabled    *bool
+	LogLevel          *string
+	LogFormat         *string
+	LogFile           *string
 }
 
 // parseBoolEnv parses a boolean environment variable with fallback

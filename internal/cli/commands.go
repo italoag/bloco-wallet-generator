@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"bloco-eth/internal/validation"
 	"bloco-eth/internal/worker"
 	"bloco-eth/pkg/errors"
+	"bloco-eth/pkg/logging"
 	"bloco-eth/pkg/utils"
 	"bloco-eth/pkg/wallet"
 )
@@ -75,7 +77,16 @@ Examples:
   bloco-eth --suffix def --count 5 --no-keystore
 
   # Generate wallet with custom keystore directory and KDF
-  bloco-eth --prefix 123 --keystore-dir ./my-keys --keystore-kdf pbkdf2`,
+  bloco-eth --prefix 123 --keystore-dir ./my-keys --keystore-kdf pbkdf2
+
+  # Generate wallet with debug logging to file
+  bloco-eth --prefix abc --log-level debug --log-file ./wallet.log
+
+  # Generate wallet with JSON logging format
+  bloco-eth --prefix abc --log-format json --log-file ./wallet.json
+
+  # Generate wallet with logging completely disabled
+  bloco-eth --prefix abc --no-logging`,
 		Version: fmt.Sprintf("%s (commit: %s, built: %s)", app.version, app.gitCommit, app.buildTime),
 		RunE:    app.generateWallet,
 	}
@@ -115,12 +126,21 @@ func (app *Application) addGlobalFlags() {
 	flags.String("keystore-dir", "./keystores", "Directory to save keystore files")
 	flags.Bool("no-keystore", false, "Disable keystore file generation")
 	flags.String("keystore-kdf", "scrypt", "KDF algorithm for keystore encryption (scrypt, pbkdf2)")
+
+	// Logging parameters
+	flags.String("log-level", "info", "Logging level (error, warn, info, debug)")
+	flags.Bool("no-logging", false, "Disable logging completely")
+	flags.String("log-file", "", "Log file path (default: stdout)")
+	flags.String("log-format", "text", "Log format (text, json, structured)")
+	flags.Int64("log-max-size", 10*1024*1024, "Maximum log file size in bytes before rotation")
+	flags.Int("log-max-files", 5, "Maximum number of rotated log files to keep")
+	flags.Int("log-buffer-size", 1000, "Buffer size for async logging")
 }
 
-// createWorkerPool creates an optimized worker pool
+// createWorkerPool creates an optimized worker pool with secure logging
 func (app *Application) createWorkerPool(poolManager *crypto.PoolManager, validator *validation.AddressValidator) (worker.WorkerPool, error) {
-	// Use worker pool that mimics the working monolithic version
-	pool := worker.NewPool(app.config.Worker.ThreadCount)
+	// Create worker pool with configuration that includes logging settings
+	pool := worker.NewPoolWithConfig(app.config.Worker.ThreadCount, app.config)
 	return pool, nil
 }
 
@@ -999,8 +1019,102 @@ func (app *Application) parseFlags(cmd *cobra.Command) error {
 		}
 	}
 
+	// Parse logging configuration
+	if err := app.parseLoggingFlags(cmd); err != nil {
+		return fmt.Errorf("failed to parse logging configuration: %w", err)
+	}
+
 	// Validate configuration after updates
 	return app.config.Validate()
+}
+
+// parseLoggingFlags parses logging-related command flags and updates configuration
+func (app *Application) parseLoggingFlags(cmd *cobra.Command) error {
+	// Parse no-logging flag
+	if noLogging, _ := cmd.Flags().GetBool("no-logging"); noLogging {
+		app.config.Logging.Enabled = false
+		return nil // Skip other logging flags if logging is disabled
+	}
+
+	// Parse log level
+	if cmd.Flags().Changed("log-level") {
+		if logLevel, _ := cmd.Flags().GetString("log-level"); logLevel != "" {
+			app.config.Logging.Level = logLevel
+		}
+	}
+
+	// Parse log format
+	if cmd.Flags().Changed("log-format") {
+		if logFormat, _ := cmd.Flags().GetString("log-format"); logFormat != "" {
+			app.config.Logging.Format = logFormat
+		}
+	}
+
+	// Parse log file
+	if cmd.Flags().Changed("log-file") {
+		if logFile, _ := cmd.Flags().GetString("log-file"); logFile != "" {
+			app.config.Logging.OutputFile = logFile
+		}
+	}
+
+	// Parse log max size
+	if cmd.Flags().Changed("log-max-size") {
+		if logMaxSize, _ := cmd.Flags().GetInt64("log-max-size"); logMaxSize > 0 {
+			app.config.Logging.MaxFileSize = logMaxSize
+		}
+	}
+
+	// Parse log max files
+	if cmd.Flags().Changed("log-max-files") {
+		if logMaxFiles, _ := cmd.Flags().GetInt("log-max-files"); logMaxFiles >= 0 {
+			app.config.Logging.MaxFiles = logMaxFiles
+		}
+	}
+
+	// Parse log buffer size
+	if cmd.Flags().Changed("log-buffer-size") {
+		if logBufferSize, _ := cmd.Flags().GetInt("log-buffer-size"); logBufferSize >= 0 {
+			app.config.Logging.BufferSize = logBufferSize
+		}
+	}
+
+	return nil
+}
+
+// createLogConfigFromConfig converts internal config to logging package config
+func (app *Application) createLogConfigFromConfig() (*logging.LogConfig, error) {
+	if !app.config.Logging.Enabled {
+		return &logging.LogConfig{Enabled: false}, nil
+	}
+
+	// Parse log level
+	level, err := logging.ParseLogLevel(app.config.Logging.Level)
+	if err != nil {
+		return nil, fmt.Errorf("invalid log level %q: %w", app.config.Logging.Level, err)
+	}
+
+	// Parse log format
+	var format logging.LogFormat
+	switch strings.ToLower(app.config.Logging.Format) {
+	case "json":
+		format = logging.JSON
+	case "structured":
+		format = logging.STRUCTURED
+	case "text":
+		format = logging.TEXT
+	default:
+		return nil, fmt.Errorf("invalid log format %q, must be one of: text, json, structured", app.config.Logging.Format)
+	}
+
+	return &logging.LogConfig{
+		Enabled:     app.config.Logging.Enabled,
+		Level:       level,
+		Format:      format,
+		OutputFile:  app.config.Logging.OutputFile,
+		MaxFileSize: app.config.Logging.MaxFileSize,
+		MaxFiles:    app.config.Logging.MaxFiles,
+		BufferSize:  app.config.Logging.BufferSize,
+	}, nil
 }
 
 // getGenerationCriteria extracts generation criteria from command flags

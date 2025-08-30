@@ -13,7 +13,9 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"golang.org/x/crypto/sha3"
 
+	"bloco-eth/internal/config"
 	"bloco-eth/pkg/errors"
+	"bloco-eth/pkg/logging"
 	"bloco-eth/pkg/wallet"
 )
 
@@ -22,7 +24,7 @@ type Pool struct {
 	threadCount    int
 	mu             sync.RWMutex
 	isRunning      bool
-	logger         *wallet.WalletLogger
+	logger         logging.SecureLogger
 	statsCollector *StatsCollector
 	statsChan      chan WorkerStats
 	statsCtx       context.Context
@@ -31,6 +33,11 @@ type Pool struct {
 
 // NewPool creates a new worker pool
 func NewPool(threadCount int) *Pool {
+	return NewPoolWithConfig(threadCount, nil)
+}
+
+// NewPoolWithConfig creates a new worker pool with configuration
+func NewPoolWithConfig(threadCount int, cfg *config.Config) *Pool {
 	// Validate threadCount
 	if threadCount < 0 {
 		threadCount = 1 // Default to 1 thread for negative values
@@ -39,10 +46,26 @@ func NewPool(threadCount int) *Pool {
 		threadCount = 1 // Default to 1 thread for zero
 	}
 
-	logger, err := wallet.NewWalletLogger()
+	// Use default config if none provided
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+
+	// Create SecureLogger from configuration
+	logConfig, err := createLogConfigFromAppConfig(cfg)
 	if err != nil {
-		// Log error but continue without file logging
-		fmt.Printf("Warning: Failed to create wallet logger: %v\n", err)
+		// Log error but continue with disabled logging
+		fmt.Printf("Warning: Failed to create log configuration: %v\n", err)
+		// Create a disabled logger as fallback
+		logConfig = &logging.LogConfig{Enabled: false}
+	}
+
+	logger, err := logging.NewSecureLogger(logConfig)
+	if err != nil {
+		// Log error but continue with disabled logging
+		fmt.Printf("Warning: Failed to create secure logger: %v\n", err)
+		// Create a disabled logger as fallback
+		logger, _ = logging.NewSecureLogger(&logging.LogConfig{Enabled: false})
 	}
 
 	statsCollector := NewStatsCollector()
@@ -90,7 +113,7 @@ func (p *Pool) Shutdown() error {
 	// Close the logger if it exists
 	if p.logger != nil {
 		if err := p.logger.Close(); err != nil {
-			fmt.Printf("Warning: Failed to close wallet logger: %v\n", err)
+			fmt.Printf("Warning: Failed to close secure logger: %v\n", err)
 		}
 	}
 
@@ -104,6 +127,19 @@ func (p *Pool) GetStatsCollector() *StatsCollector {
 
 // GenerateWalletWithContext generates a wallet using the worker pool
 func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.GenerationCriteria) (*wallet.GenerationResult, error) {
+	// Log operation start
+	if p.logger != nil {
+		params := map[string]interface{}{
+			"prefix":   criteria.Prefix,
+			"suffix":   criteria.Suffix,
+			"checksum": criteria.IsChecksum,
+			"threads":  p.threadCount,
+		}
+		if err := p.logger.LogOperationStart("wallet_generation", params); err != nil {
+			fmt.Printf("Warning: Failed to log operation start: %v\n", err)
+		}
+	}
+
 	resultCh := make(chan *wallet.GenerationResult, 1)
 	errorCh := make(chan error, 1)
 
@@ -156,6 +192,16 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 				// Generate private key
 				privateKey, err := ecdsa.GenerateKey(crypto.S256(), rand.Reader)
 				if err != nil {
+					// Log crypto error (but don't stop the worker)
+					if p.logger != nil {
+						context := map[string]interface{}{
+							"worker_id": workerID,
+							"attempts":  attempts,
+						}
+						if logErr := p.logger.LogError("crypto_key_generation", err, context); logErr != nil {
+							// Don't print warning here as it would spam the output
+						}
+					}
 					continue
 				}
 
@@ -163,6 +209,17 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 				publicKey := privateKey.Public()
 				publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 				if !ok {
+					// Log type assertion error
+					if p.logger != nil {
+						typeErr := fmt.Errorf("failed to cast public key to ECDSA")
+						context := map[string]interface{}{
+							"worker_id": workerID,
+							"attempts":  attempts,
+						}
+						if logErr := p.logger.LogError("crypto_key_conversion", typeErr, context); logErr != nil {
+							// Don't print warning here as it would spam the output
+						}
+					}
 					continue
 				}
 
@@ -210,17 +267,55 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 	// Wait for result or cancellation
 	select {
 	case result := <-resultCh:
-		// Log the wallet if logger is available
+		// Log the wallet generation and operation completion
 		if p.logger != nil {
-			if err := p.logger.LogWallet(result); err != nil {
+			// Log the specific wallet generated
+			if err := p.logger.LogWalletGenerated(
+				result.Wallet.Address,
+				int(result.Attempts),
+				result.Duration,
+				result.WorkerID,
+			); err != nil {
 				fmt.Printf("Warning: Failed to log wallet: %v\n", err)
+			}
+
+			// Log operation completion
+			stats := logging.OperationStats{
+				Duration:     result.Duration,
+				Success:      true,
+				ItemsCount:   1,
+				ErrorCount:   0,
+				ThroughputPS: 1.0 / result.Duration.Seconds(),
+			}
+			if err := p.logger.LogOperationComplete("wallet_generation", stats); err != nil {
+				fmt.Printf("Warning: Failed to log operation completion: %v\n", err)
 			}
 		}
 		return result, nil
 	case err := <-errorCh:
+		// Log the error using secure logging
+		if p.logger != nil {
+			context := map[string]interface{}{
+				"threads": p.threadCount,
+			}
+			if logErr := p.logger.LogError("wallet_generation", err, context); logErr != nil {
+				fmt.Printf("Warning: Failed to log error: %v\n", logErr)
+			}
+		}
 		return nil, err
 	case <-ctx.Done():
-		return nil, errors.NewCancellationError("generate_wallet", "generation cancelled")
+		cancellationErr := errors.NewCancellationError("generate_wallet", "generation cancelled")
+		// Log the cancellation as an error
+		if p.logger != nil {
+			context := map[string]interface{}{
+				"threads": p.threadCount,
+				"reason":  "context_cancelled",
+			}
+			if logErr := p.logger.LogError("wallet_generation", cancellationErr, context); logErr != nil {
+				fmt.Printf("Warning: Failed to log cancellation: %v\n", logErr)
+			}
+		}
+		return nil, cancellationErr
 	}
 }
 
@@ -377,4 +472,49 @@ func isEIP55Checksum(address, prefix, suffix string) bool {
 		fmt.Printf("DEBUG EIP55: Validation passed\n")
 	}
 	return true
+}
+
+// createLogConfigFromAppConfig converts internal config to logging package config
+func createLogConfigFromAppConfig(cfg *config.Config) (*logging.LogConfig, error) {
+	if !cfg.Logging.Enabled {
+		// Return a valid disabled config with default values to pass validation
+		return &logging.LogConfig{
+			Enabled:     false,
+			Level:       logging.INFO,
+			Format:      logging.TEXT,
+			OutputFile:  "",
+			MaxFileSize: 10 * 1024 * 1024, // 10MB default
+			MaxFiles:    5,
+			BufferSize:  1000,
+		}, nil
+	}
+
+	// Parse log level
+	level, err := logging.ParseLogLevel(cfg.Logging.Level)
+	if err != nil {
+		return nil, fmt.Errorf("invalid log level %q: %w", cfg.Logging.Level, err)
+	}
+
+	// Parse log format
+	var format logging.LogFormat
+	switch strings.ToLower(cfg.Logging.Format) {
+	case "json":
+		format = logging.JSON
+	case "structured":
+		format = logging.STRUCTURED
+	case "text":
+		format = logging.TEXT
+	default:
+		return nil, fmt.Errorf("invalid log format %q, must be one of: text, json, structured", cfg.Logging.Format)
+	}
+
+	return &logging.LogConfig{
+		Enabled:     cfg.Logging.Enabled,
+		Level:       level,
+		Format:      format,
+		OutputFile:  cfg.Logging.OutputFile,
+		MaxFileSize: cfg.Logging.MaxFileSize,
+		MaxFiles:    cfg.Logging.MaxFiles,
+		BufferSize:  cfg.Logging.BufferSize,
+	}, nil
 }
