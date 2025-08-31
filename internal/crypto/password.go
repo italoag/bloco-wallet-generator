@@ -1,11 +1,10 @@
 package crypto
 
 import (
+	"bloco-eth/pkg/errors"
 	"crypto/rand"
 	"fmt"
 	"strings"
-
-	"bloco-eth/pkg/errors"
 )
 
 // PasswordCharset defines the character sets used for password generation

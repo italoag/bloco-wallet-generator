@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"bloco-eth/internal/config"
 	"bloco-eth/internal/crypto"
+	"bloco-eth/internal/crypto/kdf"
 	"bloco-eth/internal/tui"
 	"bloco-eth/internal/validation"
 	"bloco-eth/internal/worker"
@@ -81,6 +83,12 @@ Examples:
   # Generate wallet with custom keystore directory and KDF
   bloco-eth --prefix 123 --keystore-dir ./my-keys --keystore-kdf pbkdf2
 
+  # Generate wallet with KDF compatibility analysis
+  bloco-eth --prefix abc --kdf-analysis --security-level high
+
+  # Generate wallet with custom KDF parameters
+  bloco-eth --prefix abc --keystore-kdf scrypt --kdf-params '{"n":524288,"r":8,"p":1}'
+
   # Generate wallet with secure debug logging to file
   bloco-eth --prefix abc --log-level debug --log-file ./operations.log
 
@@ -130,7 +138,10 @@ func (app *Application) addGlobalFlags() {
 	// KeyStore parameters
 	flags.String("keystore-dir", "./keystores", "Directory to save keystore files")
 	flags.Bool("no-keystore", false, "Disable keystore file generation")
-	flags.String("keystore-kdf", "scrypt", "KDF algorithm for keystore encryption (scrypt, pbkdf2)")
+	flags.String("keystore-kdf", "scrypt", "KDF algorithm for keystore encryption (scrypt, pbkdf2, pbkdf2-sha256, pbkdf2-sha512)")
+	flags.String("kdf-params", "", "Custom KDF parameters as JSON (e.g., '{\"n\":262144,\"r\":8,\"p\":1}' for scrypt)")
+	flags.Bool("kdf-analysis", false, "Show KDF compatibility analysis and security assessment")
+	flags.String("security-level", "medium", "Minimum security level for KDF parameters (low, medium, high, very-high)")
 
 	// Secure logging parameters (never logs sensitive data)
 	flags.String("log-level", "info", "Logging level (error, warn, info, debug) - secure logging only")
@@ -1024,6 +1035,27 @@ func (app *Application) parseFlags(cmd *cobra.Command) error {
 		}
 	}
 
+	// Parse KDF parameters if provided
+	if cmd.Flags().Changed("kdf-params") {
+		if kdfParamsStr, _ := cmd.Flags().GetString("kdf-params"); kdfParamsStr != "" {
+			if err := app.parseKDFParams(kdfParamsStr); err != nil {
+				return fmt.Errorf("invalid KDF parameters: %w", err)
+			}
+		}
+	}
+
+	// Parse KDF analysis flag
+	if kdfAnalysis, _ := cmd.Flags().GetBool("kdf-analysis"); kdfAnalysis {
+		app.config.KeyStore.ShowAnalysis = true
+	}
+
+	// Parse security level
+	if cmd.Flags().Changed("security-level") {
+		if securityLevel, _ := cmd.Flags().GetString("security-level"); securityLevel != "" {
+			app.config.KeyStore.SecurityLevel = securityLevel
+		}
+	}
+
 	// Parse logging configuration
 	if err := app.parseLoggingFlags(cmd); err != nil {
 		return fmt.Errorf("failed to parse logging configuration: %w", err)
@@ -1120,6 +1152,261 @@ func (app *Application) createLogConfigFromConfig() (*logging.LogConfig, error) 
 		MaxFiles:    app.config.Logging.MaxFiles,
 		BufferSize:  app.config.Logging.BufferSize,
 	}, nil
+}
+
+// parseKDFParams parses KDF parameters from JSON string
+func (app *Application) parseKDFParams(kdfParamsStr string) error {
+	var params map[string]interface{}
+	if err := json.Unmarshal([]byte(kdfParamsStr), &params); err != nil {
+		return fmt.Errorf("invalid JSON format: %w", err)
+	}
+
+	// Validate parameters based on KDF algorithm
+	switch strings.ToLower(app.config.KeyStore.KDFAlgorithm) {
+	case "scrypt":
+		if err := app.validateScryptParams(params); err != nil {
+			return fmt.Errorf("invalid scrypt parameters: %w", err)
+		}
+	case "pbkdf2", "pbkdf2-sha256", "pbkdf2-sha512":
+		if err := app.validatePBKDF2Params(params); err != nil {
+			return fmt.Errorf("invalid PBKDF2 parameters: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported KDF algorithm: %s", app.config.KeyStore.KDFAlgorithm)
+	}
+
+	app.config.KeyStore.KDFParams = params
+	return nil
+}
+
+// validateScryptParams validates scrypt parameters
+func (app *Application) validateScryptParams(params map[string]interface{}) error {
+	// Check required parameters
+	requiredParams := []string{"n", "r", "p", "dklen"}
+	for _, param := range requiredParams {
+		if _, exists := params[param]; !exists {
+			return fmt.Errorf("missing required parameter: %s", param)
+		}
+	}
+
+	// Validate N parameter (must be power of 2)
+	if n, ok := params["n"].(float64); ok {
+		nInt := int(n)
+		if nInt <= 0 || (nInt&(nInt-1)) != 0 {
+			return fmt.Errorf("N parameter must be a positive power of 2, got %d", nInt)
+		}
+		if nInt < 1024 || nInt > 67108864 {
+			return fmt.Errorf("N parameter must be between 1024 and 67108864, got %d", nInt)
+		}
+	} else {
+		return fmt.Errorf("N parameter must be a number")
+	}
+
+	// Validate r parameter
+	if r, ok := params["r"].(float64); ok {
+		rInt := int(r)
+		if rInt <= 0 || rInt > 256 {
+			return fmt.Errorf("r parameter must be between 1 and 256, got %d", rInt)
+		}
+	} else {
+		return fmt.Errorf("r parameter must be a number")
+	}
+
+	// Validate p parameter
+	if p, ok := params["p"].(float64); ok {
+		pInt := int(p)
+		if pInt <= 0 || pInt > 256 {
+			return fmt.Errorf("p parameter must be between 1 and 256, got %d", pInt)
+		}
+	} else {
+		return fmt.Errorf("p parameter must be a number")
+	}
+
+	// Validate dklen parameter
+	if dklen, ok := params["dklen"].(float64); ok {
+		dklenInt := int(dklen)
+		if dklenInt <= 0 || dklenInt > 128 {
+			return fmt.Errorf("dklen parameter must be between 1 and 128, got %d", dklenInt)
+		}
+	} else {
+		return fmt.Errorf("dklen parameter must be a number")
+	}
+
+	return nil
+}
+
+// validatePBKDF2Params validates PBKDF2 parameters
+func (app *Application) validatePBKDF2Params(params map[string]interface{}) error {
+	// Check required parameters
+	requiredParams := []string{"c", "dklen"}
+	for _, param := range requiredParams {
+		if _, exists := params[param]; !exists {
+			return fmt.Errorf("missing required parameter: %s", param)
+		}
+	}
+
+	// Validate c parameter (iteration count)
+	if c, ok := params["c"].(float64); ok {
+		cInt := int(c)
+		if cInt < 100000 {
+			return fmt.Errorf("c parameter (iteration count) must be at least 100000 for security, got %d", cInt)
+		}
+		if cInt > 10000000 {
+			return fmt.Errorf("c parameter (iteration count) too high (max 10000000), got %d", cInt)
+		}
+	} else {
+		return fmt.Errorf("c parameter must be a number")
+	}
+
+	// Validate dklen parameter
+	if dklen, ok := params["dklen"].(float64); ok {
+		dklenInt := int(dklen)
+		if dklenInt <= 0 || dklenInt > 128 {
+			return fmt.Errorf("dklen parameter must be between 1 and 128, got %d", dklenInt)
+		}
+	} else {
+		return fmt.Errorf("dklen parameter must be a number")
+	}
+
+	// Validate prf parameter if provided
+	if prf, exists := params["prf"]; exists {
+		if prfStr, ok := prf.(string); ok {
+			validPRFs := []string{"hmac-sha256", "hmac-sha512"}
+			valid := false
+			for _, validPRF := range validPRFs {
+				if prfStr == validPRF {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				return fmt.Errorf("prf parameter must be one of %v, got %s", validPRFs, prfStr)
+			}
+		} else {
+			return fmt.Errorf("prf parameter must be a string")
+		}
+	}
+
+	return nil
+}
+
+// extractKDFParamsFromKeystore extracts complete KDF parameters from a generated keystore
+func (app *Application) extractKDFParamsFromKeystore(keystore *crypto.KeyStoreV3) map[string]interface{} {
+	params := make(map[string]interface{})
+
+	switch strings.ToLower(keystore.Crypto.KDF) {
+	case "scrypt":
+		if scryptParams, err := keystore.GetScryptParams(); err == nil && scryptParams != nil {
+			params["n"] = scryptParams.N
+			params["r"] = scryptParams.R
+			params["p"] = scryptParams.P
+			params["dklen"] = scryptParams.DKLen
+			params["salt"] = scryptParams.Salt
+		}
+	case "pbkdf2":
+		if pbkdf2Params, err := keystore.GetPBKDF2Params(); err == nil && pbkdf2Params != nil {
+			params["c"] = pbkdf2Params.C
+			params["dklen"] = pbkdf2Params.DKLen
+			params["prf"] = pbkdf2Params.PRF
+			params["salt"] = pbkdf2Params.Salt
+		}
+	}
+
+	return params
+}
+
+// parseSecurityLevel converts string security level to SecurityLevel enum
+func (app *Application) parseSecurityLevel(level string) kdf.SecurityLevel {
+	switch strings.ToLower(level) {
+	case "low":
+		return kdf.SecurityLevelLow
+	case "medium":
+		return kdf.SecurityLevelMedium
+	case "high":
+		return kdf.SecurityLevelHigh
+	case "very-high", "veryhigh":
+		return kdf.SecurityLevelVeryHigh
+	default:
+		return kdf.SecurityLevelMedium // Default to medium
+	}
+}
+
+// displayCompatibilityReport displays KDF compatibility analysis results
+func (app *Application) displayCompatibilityReport(report *kdf.CompatibilityReport, verbose bool) {
+	if !verbose && !app.config.KeyStore.ShowAnalysis {
+		return
+	}
+
+	fmt.Printf("\n🔍 KDF Compatibility Analysis\n")
+	fmt.Printf("═══════════════════════════════════════\n")
+
+	// Basic information
+	fmt.Printf("KDF Algorithm: %s", report.KDFType)
+	if report.NormalizedKDF != report.KDFType {
+		fmt.Printf(" (normalized: %s)", report.NormalizedKDF)
+	}
+	fmt.Printf("\n")
+
+	// Security level with color coding
+	securityIcon := app.getSecurityLevelIcon(report.SecurityLevel)
+	fmt.Printf("Security Level: %s %s\n", securityIcon, report.SecurityLevel)
+
+	// Compatibility status
+	if report.Compatible {
+		fmt.Printf("Status: ✅ Compatible\n")
+	} else {
+		fmt.Printf("Status: ❌ Incompatible\n")
+	}
+
+	// Display parameters if verbose
+	if verbose && len(report.Parameters) > 0 {
+		fmt.Printf("\nParameters:\n")
+		for key, value := range report.Parameters {
+			fmt.Printf("  %s: %v\n", key, value)
+		}
+	}
+
+	// Display issues
+	if len(report.Issues) > 0 {
+		fmt.Printf("\n❌ Issues:\n")
+		for _, issue := range report.Issues {
+			fmt.Printf("  • %s\n", issue)
+		}
+	}
+
+	// Display warnings
+	if len(report.Warnings) > 0 {
+		fmt.Printf("\n⚠️  Warnings:\n")
+		for _, warning := range report.Warnings {
+			fmt.Printf("  • %s\n", warning)
+		}
+	}
+
+	// Display suggestions
+	if len(report.Suggestions) > 0 {
+		fmt.Printf("\n💡 Suggestions:\n")
+		for _, suggestion := range report.Suggestions {
+			fmt.Printf("  • %s\n", suggestion)
+		}
+	}
+
+	fmt.Printf("\n")
+}
+
+// getSecurityLevelIcon returns an appropriate icon for the security level
+func (app *Application) getSecurityLevelIcon(level kdf.SecurityLevel) string {
+	switch level {
+	case kdf.SecurityLevelLow:
+		return "🔴"
+	case kdf.SecurityLevelMedium:
+		return "🟡"
+	case kdf.SecurityLevelHigh:
+		return "🟢"
+	case kdf.SecurityLevelVeryHigh:
+		return "🔵"
+	default:
+		return "⚪"
+	}
 }
 
 // getGenerationCriteria extracts generation criteria from command flags
@@ -1704,11 +1991,30 @@ func (app *Application) generateAndSaveKeystore(w *wallet.Wallet) error {
 
 // generateAndSaveKeystoreWithVerbose generates and saves a keystore file with verbose control
 func (app *Application) generateAndSaveKeystoreWithVerbose(w *wallet.Wallet, verbose bool) error {
-	// Create keystore service configuration
+	// Create Universal KDF service for enhanced compatibility
+	kdfService := kdf.NewUniversalKDFService()
+
+	// Create compatibility analyzer
+	analyzer := kdf.NewKDFCompatibilityAnalyzer(kdfService)
+
+	// Prepare KDF parameters
+	kdfParams := app.config.KeyStore.KDFParams
+	if len(kdfParams) == 0 {
+		// Use default parameters based on security level
+		securityLevel := app.parseSecurityLevel(app.config.KeyStore.SecurityLevel)
+		defaultParams, err := analyzer.GetOptimizedParams(app.config.KeyStore.KDFAlgorithm, securityLevel, 512) // 512MB max memory
+		if err != nil {
+			return fmt.Errorf("failed to get default KDF parameters: %w", err)
+		}
+		kdfParams = defaultParams
+	}
+
+	// Create keystore service configuration with Universal KDF
 	keystoreConfig := crypto.KeyStoreConfig{
 		Enabled:         app.config.KeyStore.Enabled,
 		OutputDirectory: app.config.KeyStore.OutputDir,
 		KDF:             app.config.KeyStore.KDFAlgorithm,
+		KDFParams:       kdfParams,
 		Cipher:          "aes-128-ctr",
 		MaxRetries:      3,
 		RetryDelay:      100, // 100ms
@@ -1718,8 +2024,34 @@ func (app *Application) generateAndSaveKeystoreWithVerbose(w *wallet.Wallet, ver
 	keystoreService := crypto.NewKeyStoreService(keystoreConfig)
 	keystoreService.SetVerboseMode(verbose)
 
-	// Use retry mechanism for better reliability
-	if err := keystoreService.SaveKeyStoreFilesWithRetry(w.PrivateKey, w.Address); err != nil {
+	// Generate keystore first to get complete parameters
+	keystore, password, err := keystoreService.GenerateKeyStore(w.PrivateKey, w.Address)
+	if err != nil {
+		return fmt.Errorf("failed to generate keystore for address %s: %w", w.Address, err)
+	}
+
+	// Perform compatibility analysis after keystore generation when all parameters are available
+	if app.config.KeyStore.ShowAnalysis || verbose {
+		// Extract complete KDF parameters from generated keystore
+		completeParams := app.extractKDFParamsFromKeystore(keystore)
+
+		cryptoParamsComplete := &kdf.CryptoParams{
+			KDF:       app.config.KeyStore.KDFAlgorithm,
+			KDFParams: completeParams,
+		}
+
+		report, err := analyzer.AnalyzeKeystore(cryptoParamsComplete)
+		if err != nil {
+			if verbose {
+				fmt.Printf("⚠️  Warning: Failed to analyze KDF compatibility: %v\n", err)
+			}
+		} else {
+			app.displayCompatibilityReport(report, verbose)
+		}
+	}
+
+	// Save the generated keystore
+	if err := keystoreService.SaveKeyStoreFilesToDisk(w.Address, keystore, password); err != nil {
 		// Check if it's a KeyStoreError for better error reporting
 		if ksErr, ok := err.(*crypto.KeyStoreError); ok {
 			if ksErr.UserMessage != "" {

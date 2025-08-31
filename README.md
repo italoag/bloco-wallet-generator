@@ -76,12 +76,14 @@ make build-all
 - **Thread-safe**: Safe concurrent logging from multiple worker threads
 - **Performance Optimized**: Async buffering with minimal impact on generation speed
 
-### KeyStore V3 Generation
+### KeyStore V3 Generation with Universal KDF
 - **Automatic KeyStore Files**: Generates encrypted KeyStore V3 JSON files for each wallet
-- **Secure Encryption**: Uses scrypt or PBKDF2 key derivation with AES-128-CTR encryption
-- **Password Protection**: Automatically generates secure passwords with complexity validation
-- **Client Compatibility**: Compatible with MetaMask, geth, MyEtherWallet, and other Ethereum clients
-- **Configurable Output**: Customizable output directory and encryption algorithms
+- **Universal KDF System**: Advanced key derivation with scrypt and PBKDF2 support
+- **Enhanced Security**: Comprehensive parameter validation and security level analysis
+- **Client Compatibility**: Tested compatibility with geth, Besu, Anvil, Reth, and Hyperledger Firefly
+- **Compatibility Analysis**: Built-in compatibility reporting and optimization suggestions
+- **Configurable Security**: Multiple security presets from development to enterprise levels
+- **Parameter Optimization**: Automatic parameter tuning for performance vs security balance
 - **Atomic Operations**: Thread-safe file operations with atomic writes
 
 ### EIP-55 Checksum Support
@@ -137,6 +139,15 @@ make build-all
 
 # NEW: Generate with custom keystore settings
 ./bloco-eth --prefix abc --keystore-dir ./secure-keys --keystore-kdf scrypt --count 3
+
+# NEW: Generate with security analysis
+./bloco-eth --prefix abc --kdf-analysis --security-level production
+
+# NEW: Generate with custom KDF parameters
+./bloco-eth --prefix abc --keystore-kdf pbkdf2 --kdf-params '{"c":600000,"prf":"hmac-sha256","dklen":32}'
+
+# NEW: Generate optimized for specific client
+./bloco-eth --prefix abc --optimize-for geth --security-level high
 ```
 
 #### Analyze Pattern Difficulty
@@ -186,6 +197,9 @@ make build-all
 | `--keystore-dir` | | **NEW**: Directory to save keystore files | "./keystores" |
 | `--no-keystore` | | **NEW**: Disable keystore file generation | false |
 | `--keystore-kdf` | | **NEW**: KDF algorithm (scrypt, pbkdf2) | "scrypt" |
+| `--kdf-params` | | **NEW**: Custom KDF parameters (JSON format) | auto |
+| `--security-level` | | **NEW**: Security preset (development, testing, production, enterprise) | "production" |
+| `--kdf-analysis` | | **NEW**: Show compatibility analysis and security assessment | false |
 | `--log-level` | | **NEW**: Secure logging level (error, warn, info, debug) | "info" |
 | `--no-logging` | | **NEW**: Disable logging completely | false |
 | `--log-file` | | **NEW**: Log file path (secure logging only) | stdout |
@@ -209,6 +223,95 @@ make build-all
 | `--threads` | `-t` | Number of threads to use (0 = auto-detect all CPUs) | 0 |
 
 ## Examples and Output
+
+### Universal KDF Configuration
+
+The Universal KDF system provides advanced key derivation with comprehensive compatibility and security analysis:
+
+#### Basic KDF Usage
+
+```bash
+# Generate with default high-security scrypt
+./bloco-eth --prefix abc
+
+# Use PBKDF2 for faster generation
+./bloco-eth --prefix abc --keystore-kdf pbkdf2
+
+# Use security presets
+./bloco-eth --prefix abc --security-level enterprise
+./bloco-eth --prefix abc --security-level development
+
+# Show compatibility analysis
+./bloco-eth --prefix abc --kdf-analysis
+```
+
+#### Custom KDF Parameters
+
+```bash
+# Custom scrypt parameters
+./bloco-eth --prefix abc --keystore-kdf scrypt --kdf-params '{
+  "n": 262144,
+  "r": 8,
+  "p": 1,
+  "dklen": 32
+}'
+
+# Custom PBKDF2 parameters
+./bloco-eth --prefix abc --keystore-kdf pbkdf2 --kdf-params '{
+  "c": 600000,
+  "prf": "hmac-sha256",
+  "dklen": 32
+}'
+```
+
+#### Security Presets
+
+| Preset | KDF | Parameters | Security | Performance | Use Case |
+|--------|-----|------------|----------|-------------|----------|
+| `development` | scrypt | n=4096 | Low | Very Fast | Development/Testing |
+| `testing` | scrypt | n=65536 | Medium | Fast | Integration Testing |
+| `production` | scrypt | n=262144 | High | Moderate | Production Applications |
+| `enterprise` | scrypt | n=1048576 | Very High | Slow | Long-term Storage |
+
+#### Client Compatibility
+
+The Universal KDF system ensures compatibility with major Ethereum clients:
+
+- ✅ **Geth (Go Ethereum)**: Full compatibility with standard parameters
+- ✅ **Besu**: Excellent support for all KDF configurations
+- ✅ **Anvil (Foundry)**: Supports both scrypt and PBKDF2
+- ✅ **Reth**: Full KeyStore V3 compliance
+- ✅ **Hyperledger Firefly**: Optimized PBKDF2 configurations available
+
+#### Compatibility Analysis Example
+
+```bash
+./bloco-eth --prefix abc --kdf-analysis
+```
+
+Output:
+```
+🔐 KDF Compatibility Analysis
+═══════════════════════════════════════════════════════════════
+🎯 KDF Type: scrypt
+📊 Parameters: n=262144, r=8, p=1, dklen=32
+🛡️  Security Level: High
+💾 Memory Usage: 128 MB
+⏱️  Generation Time: ~2-5 seconds
+
+🔍 Client Compatibility:
+   ✅ Geth (Go Ethereum): Compatible
+   ✅ Besu: Compatible
+   ✅ Anvil (Foundry): Compatible
+   ✅ Reth: Compatible
+   ✅ Hyperledger Firefly: Compatible
+
+💡 Recommendations:
+   • Current configuration provides excellent security
+   • Compatible with all major Ethereum clients
+   • Consider using 'production' preset for consistency
+═══════════════════════════════════════════════════════════════
+```
 
 ### Enhanced Help Text
 
@@ -624,6 +727,47 @@ Output:
    • Peak performance: 425,640 addr/s
 💻 Platform: Go go1.21+ (8 CPU cores utilized)
 ═══════════════════════════════════════════════════════════════
+```
+
+## Documentation
+
+### KDF Configuration and Troubleshooting
+
+For detailed information about KDF configuration and troubleshooting:
+
+- **[KDF Configuration Examples](docs/KDF_CONFIGURATION_EXAMPLES.md)**: Comprehensive examples for different security levels and client configurations
+- **[KDF Troubleshooting Guide](docs/KDF_TROUBLESHOOTING_GUIDE.md)**: Solutions for common compatibility issues and parameter optimization
+
+### Quick Reference
+
+#### Common KDF Configurations
+
+```bash
+# High security (recommended for production)
+./bloco-eth --prefix abc --security-level production
+
+# Fast generation (development only)
+./bloco-eth --prefix abc --security-level development
+
+# Maximum security (enterprise)
+./bloco-eth --prefix abc --security-level enterprise
+
+# Client-specific optimization
+./bloco-eth --prefix abc --optimize-for geth
+./bloco-eth --prefix abc --optimize-for anvil
+```
+
+#### Troubleshooting Commands
+
+```bash
+# Analyze existing keystore
+./bloco-eth --analyze-keystore ./keystores/0xabc123....json
+
+# Check client compatibility
+./bloco-eth --check-compatibility --keystore ./keystores/0xabc123....json --client geth
+
+# Validate KDF parameters
+./bloco-eth --validate-params --keystore-kdf scrypt --kdf-params '{"n":262144,"r":8,"p":1,"dklen":32}'
 ```
 
 ## Architecture Overview

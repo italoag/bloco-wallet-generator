@@ -55,11 +55,14 @@ type CLIConfig struct {
 
 // KeyStoreConfig contains keystore generation configuration
 type KeyStoreConfig struct {
-	Enabled      bool   `yaml:"enabled"`
-	OutputDir    string `yaml:"output_dir"`
-	KDFAlgorithm string `yaml:"kdf_algorithm"`
-	CreateDirs   bool   `yaml:"create_dirs"`
-	FileMode     int    `yaml:"file_mode"`
+	Enabled       bool                   `yaml:"enabled"`
+	OutputDir     string                 `yaml:"output_dir"`
+	KDFAlgorithm  string                 `yaml:"kdf_algorithm"`
+	KDFParams     map[string]interface{} `yaml:"kdf_params"`
+	CreateDirs    bool                   `yaml:"create_dirs"`
+	FileMode      int                    `yaml:"file_mode"`
+	ShowAnalysis  bool                   `yaml:"show_analysis"`
+	SecurityLevel string                 `yaml:"security_level"`
 }
 
 // LoggingConfig contains logging configuration
@@ -104,11 +107,14 @@ func DefaultConfig() *Config {
 			QuietMode:              false,
 		},
 		KeyStore: KeyStoreConfig{
-			Enabled:      true,
-			OutputDir:    "./keystores",
-			KDFAlgorithm: "scrypt",
-			CreateDirs:   true,
-			FileMode:     0600,
+			Enabled:       true,
+			OutputDir:     "./keystores",
+			KDFAlgorithm:  "scrypt",
+			KDFParams:     make(map[string]interface{}),
+			CreateDirs:    true,
+			FileMode:      0600,
+			ShowAnalysis:  false,
+			SecurityLevel: "medium",
 		},
 		Logging: LoggingConfig{
 			Enabled:     true,
@@ -171,6 +177,14 @@ func (c *Config) LoadFromEnvironment() {
 
 	if keystoreKDF := os.Getenv("BLOCO_KEYSTORE_KDF"); keystoreKDF != "" {
 		c.KeyStore.KDFAlgorithm = keystoreKDF
+	}
+
+	if showAnalysis := os.Getenv("BLOCO_KDF_ANALYSIS"); showAnalysis != "" {
+		c.KeyStore.ShowAnalysis = parseBoolEnv(showAnalysis, c.KeyStore.ShowAnalysis)
+	}
+
+	if securityLevel := os.Getenv("BLOCO_SECURITY_LEVEL"); securityLevel != "" {
+		c.KeyStore.SecurityLevel = securityLevel
 	}
 
 	// Logging configuration
@@ -249,10 +263,16 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("keystore output directory cannot be empty")
 	}
 
-	validKDFAlgorithms := []string{"scrypt", "pbkdf2"}
+	validKDFAlgorithms := []string{"scrypt", "pbkdf2", "pbkdf2-sha256", "pbkdf2-sha512"}
 	if !contains(validKDFAlgorithms, c.KeyStore.KDFAlgorithm) {
 		return fmt.Errorf("invalid KDF algorithm: %s (valid: %v)",
 			c.KeyStore.KDFAlgorithm, validKDFAlgorithms)
+	}
+
+	validSecurityLevels := []string{"low", "medium", "high", "very-high"}
+	if !contains(validSecurityLevels, c.KeyStore.SecurityLevel) {
+		return fmt.Errorf("invalid security level: %s (valid: %v)",
+			c.KeyStore.SecurityLevel, validSecurityLevels)
 	}
 
 	if c.KeyStore.FileMode < 0 || c.KeyStore.FileMode > 0777 {
@@ -317,6 +337,18 @@ func (c *Config) ApplyOverrides(overrides ConfigOverrides) {
 		c.KeyStore.KDFAlgorithm = *overrides.KeyStoreKDF
 	}
 
+	if overrides.KDFParams != nil {
+		c.KeyStore.KDFParams = *overrides.KDFParams
+	}
+
+	if overrides.ShowKDFAnalysis != nil {
+		c.KeyStore.ShowAnalysis = *overrides.ShowKDFAnalysis
+	}
+
+	if overrides.SecurityLevel != nil {
+		c.KeyStore.SecurityLevel = *overrides.SecurityLevel
+	}
+
 	if overrides.LoggingEnabled != nil {
 		c.Logging.Enabled = *overrides.LoggingEnabled
 	}
@@ -343,6 +375,9 @@ type ConfigOverrides struct {
 	KeyStoreEnabled   *bool
 	KeyStoreOutputDir *string
 	KeyStoreKDF       *string
+	KDFParams         *map[string]interface{}
+	ShowKDFAnalysis   *bool
+	SecurityLevel     *string
 	LoggingEnabled    *bool
 	LogLevel          *string
 	LogFormat         *string

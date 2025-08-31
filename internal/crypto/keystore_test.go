@@ -1046,7 +1046,7 @@ func TestEncryptPrivateKey(t *testing.T) {
 			password:   "testpassword",
 			kdf:        "bcrypt",
 			wantError:  true,
-			errorMsg:   "unsupported KDF",
+			errorMsg:   "KDF not supported", // Updated for Universal KDF integration
 		},
 	}
 

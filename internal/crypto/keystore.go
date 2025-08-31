@@ -1,9 +1,9 @@
 package crypto
 
 import (
+	"bloco-eth/internal/crypto/kdf"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/crypto/scrypt"
@@ -21,13 +22,14 @@ import (
 
 // KeyStoreError represents detailed error information for keystore operations
 type KeyStoreError struct {
-	Operation   string // The operation that failed (e.g., "encrypt", "save_file", "validate")
-	Component   string // The component involved (e.g., "keystore", "password", "directory")
-	Address     string // The address being processed (if applicable)
-	Path        string // The file path involved (if applicable)
-	Underlying  error  // The underlying error
-	Recoverable bool   // Whether the error might be recoverable with retry
-	UserMessage string // User-friendly error message
+	Operation   string        // The operation that failed (e.g., "encrypt", "save_file", "validate")
+	Component   string        // The component involved (e.g., "keystore", "password", "directory")
+	Address     string        // The address being processed (if applicable)
+	Path        string        // The file path involved (if applicable)
+	Underlying  error         // The underlying error
+	Recoverable bool          // Whether the error might be recoverable with retry
+	UserMessage string        // User-friendly error message
+	KDFError    *kdf.KDFError // KDF-specific error information (if applicable)
 }
 
 func (e *KeyStoreError) Error() string {
@@ -64,6 +66,40 @@ func (e *KeyStoreError) Unwrap() error {
 // IsRecoverable returns true if the error might be recoverable with retry
 func (e *KeyStoreError) IsRecoverable() bool {
 	return e.Recoverable
+}
+
+// GetKDFError returns the underlying KDF error if present
+func (e *KeyStoreError) GetKDFError() *kdf.KDFError {
+	return e.KDFError
+}
+
+// HasKDFError returns true if this error contains KDF-specific information
+func (e *KeyStoreError) HasKDFError() bool {
+	return e.KDFError != nil
+}
+
+// GetKDFSuggestions returns KDF-specific suggestions if available
+func (e *KeyStoreError) GetKDFSuggestions() []string {
+	if e.KDFError != nil {
+		return e.KDFError.GetSuggestions()
+	}
+	return nil
+}
+
+// GetKDFType returns the KDF type if this is a KDF-related error
+func (e *KeyStoreError) GetKDFType() string {
+	if e.KDFError != nil {
+		return e.KDFError.KDFType
+	}
+	return ""
+}
+
+// GetKDFParameter returns the problematic KDF parameter if available
+func (e *KeyStoreError) GetKDFParameter() string {
+	if e.KDFError != nil {
+		return e.KDFError.Parameter
+	}
+	return ""
 }
 
 // NewKeyStoreError creates a new KeyStoreError with the given parameters
@@ -106,6 +142,30 @@ func NewRecoverableKeyStoreError(operation, component string, err error, userMes
 	}
 }
 
+// NewKDFKeyStoreError creates a new KeyStoreError with KDF-specific information
+func NewKDFKeyStoreError(operation, component string, kdfErr *kdf.KDFError) *KeyStoreError {
+	userMessage := fmt.Sprintf("KDF %s failed: %s", operation, kdfErr.Message)
+	if len(kdfErr.Suggestions) > 0 {
+		userMessage += fmt.Sprintf(". Suggestions: %s", strings.Join(kdfErr.Suggestions, "; "))
+	}
+
+	return &KeyStoreError{
+		Operation:   operation,
+		Component:   component,
+		Underlying:  kdfErr,
+		Recoverable: kdfErr.IsRecoverable(),
+		UserMessage: userMessage,
+		KDFError:    kdfErr,
+	}
+}
+
+// NewKDFKeyStoreErrorWithAddress creates a new KeyStoreError with KDF and address information
+func NewKDFKeyStoreErrorWithAddress(operation, component, address string, kdfErr *kdf.KDFError) *KeyStoreError {
+	err := NewKDFKeyStoreError(operation, component, kdfErr)
+	err.Address = address
+	return err
+}
+
 // KeyStoreV3 represents the Ethereum KeyStore V3 format
 type KeyStoreV3 struct {
 	Address string         `json:"address"`
@@ -146,6 +206,363 @@ type PBKDF2Params struct {
 	Salt  string `json:"salt"`
 }
 
+// ValidateScryptParams validates scrypt parameters and returns detailed errors
+func ValidateScryptParams(params *ScryptParams) error {
+	if params == nil {
+		return fmt.Errorf("scrypt parameters cannot be nil")
+	}
+
+	// Validate N parameter (must be power of 2)
+	if params.N <= 0 {
+		return fmt.Errorf("N parameter must be positive, got %d", params.N)
+	}
+	if params.N&(params.N-1) != 0 {
+		return fmt.Errorf("N parameter must be a power of 2, got %d", params.N)
+	}
+	if params.N < 1024 || params.N > 67108864 {
+		return fmt.Errorf("N parameter must be between 1024 and 67108864, got %d", params.N)
+	}
+
+	// Validate R parameter
+	if params.R <= 0 || params.R > 1024 {
+		return fmt.Errorf("R parameter must be between 1 and 1024, got %d", params.R)
+	}
+
+	// Validate P parameter
+	if params.P <= 0 || params.P > 16 {
+		return fmt.Errorf("P parameter must be between 1 and 16, got %d", params.P)
+	}
+
+	// Validate DKLen parameter
+	if params.DKLen < 16 || params.DKLen > 128 {
+		return fmt.Errorf("DKLen parameter must be between 16 and 128, got %d", params.DKLen)
+	}
+
+	// Validate salt
+	if params.Salt == "" {
+		return fmt.Errorf("salt cannot be empty")
+	}
+	if _, err := hex.DecodeString(params.Salt); err != nil {
+		return fmt.Errorf("salt must be valid hex string: %w", err)
+	}
+
+	// Check memory usage (approximate)
+	memoryUsage := int64(128) * int64(params.R) * int64(params.N) * int64(params.P)
+	if memoryUsage > 2*1024*1024*1024 { // 2GB limit
+		return fmt.Errorf("memory usage too high: %d bytes (limit: 2GB)", memoryUsage)
+	}
+
+	return nil
+}
+
+// ValidatePBKDF2Params validates PBKDF2 parameters and returns detailed errors
+func ValidatePBKDF2Params(params *PBKDF2Params) error {
+	if params == nil {
+		return fmt.Errorf("PBKDF2 parameters cannot be nil")
+	}
+
+	// Validate iteration count
+	if params.C < 1000 {
+		return fmt.Errorf("iteration count too low for security: %d (minimum: 1000)", params.C)
+	}
+	if params.C > 10000000 {
+		return fmt.Errorf("iteration count too high: %d (maximum: 10000000)", params.C)
+	}
+
+	// Validate DKLen parameter
+	if params.DKLen < 16 || params.DKLen > 128 {
+		return fmt.Errorf("DKLen parameter must be between 16 and 128, got %d", params.DKLen)
+	}
+
+	// Validate PRF parameter
+	validPRFs := map[string]bool{
+		"hmac-sha256": true,
+		"hmac-sha512": true,
+		"":            true, // Empty defaults to hmac-sha256
+	}
+	if !validPRFs[params.PRF] {
+		return fmt.Errorf("invalid PRF: %s (supported: hmac-sha256, hmac-sha512)", params.PRF)
+	}
+
+	// Validate salt
+	if params.Salt == "" {
+		return fmt.Errorf("salt cannot be empty")
+	}
+	if _, err := hex.DecodeString(params.Salt); err != nil {
+		return fmt.Errorf("salt must be valid hex string: %w", err)
+	}
+
+	return nil
+}
+
+// ParseScryptParamsFromMap creates ScryptParams from a map with flexible type handling
+func ParseScryptParamsFromMap(params map[string]interface{}) (*ScryptParams, error) {
+	if params == nil {
+		return nil, fmt.Errorf("parameters map cannot be nil")
+	}
+
+	result := &ScryptParams{}
+
+	// Parse N parameter
+	if n, ok := params["n"]; ok {
+		if nInt, err := parseIntParam(n); err != nil {
+			return nil, fmt.Errorf("invalid N parameter: %w", err)
+		} else {
+			result.N = nInt
+		}
+	} else {
+		return nil, fmt.Errorf("missing required parameter: n")
+	}
+
+	// Parse R parameter
+	if r, ok := params["r"]; ok {
+		if rInt, err := parseIntParam(r); err != nil {
+			return nil, fmt.Errorf("invalid R parameter: %w", err)
+		} else {
+			result.R = rInt
+		}
+	} else {
+		return nil, fmt.Errorf("missing required parameter: r")
+	}
+
+	// Parse P parameter
+	if p, ok := params["p"]; ok {
+		if pInt, err := parseIntParam(p); err != nil {
+			return nil, fmt.Errorf("invalid P parameter: %w", err)
+		} else {
+			result.P = pInt
+		}
+	} else {
+		return nil, fmt.Errorf("missing required parameter: p")
+	}
+
+	// Parse DKLen parameter
+	if dklen, ok := params["dklen"]; ok {
+		if dklenInt, err := parseIntParam(dklen); err != nil {
+			return nil, fmt.Errorf("invalid DKLen parameter: %w", err)
+		} else {
+			result.DKLen = dklenInt
+		}
+	} else {
+		return nil, fmt.Errorf("missing required parameter: dklen")
+	}
+
+	// Parse Salt parameter
+	if salt, ok := params["salt"]; ok {
+		if saltStr, err := parseSaltParam(salt); err != nil {
+			return nil, fmt.Errorf("invalid salt parameter: %w", err)
+		} else {
+			result.Salt = saltStr
+		}
+	} else {
+		return nil, fmt.Errorf("missing required parameter: salt")
+	}
+
+	return result, nil
+}
+
+// ParsePBKDF2ParamsFromMap creates PBKDF2Params from a map with flexible type handling
+func ParsePBKDF2ParamsFromMap(params map[string]interface{}) (*PBKDF2Params, error) {
+	if params == nil {
+		return nil, fmt.Errorf("parameters map cannot be nil")
+	}
+
+	result := &PBKDF2Params{}
+
+	// Parse C parameter (iteration count)
+	if c, ok := params["c"]; ok {
+		if cInt, err := parseIntParam(c); err != nil {
+			return nil, fmt.Errorf("invalid C parameter: %w", err)
+		} else {
+			result.C = cInt
+		}
+	} else {
+		return nil, fmt.Errorf("missing required parameter: c")
+	}
+
+	// Parse DKLen parameter
+	if dklen, ok := params["dklen"]; ok {
+		if dklenInt, err := parseIntParam(dklen); err != nil {
+			return nil, fmt.Errorf("invalid DKLen parameter: %w", err)
+		} else {
+			result.DKLen = dklenInt
+		}
+	} else {
+		return nil, fmt.Errorf("missing required parameter: dklen")
+	}
+
+	// Parse PRF parameter (optional, defaults to hmac-sha256)
+	if prf, ok := params["prf"]; ok {
+		if prfStr, ok := prf.(string); ok {
+			result.PRF = prfStr
+		} else {
+			return nil, fmt.Errorf("PRF parameter must be a string, got %T", prf)
+		}
+	} else {
+		result.PRF = "hmac-sha256" // Default
+	}
+
+	// Parse Salt parameter
+	if salt, ok := params["salt"]; ok {
+		if saltStr, err := parseSaltParam(salt); err != nil {
+			return nil, fmt.Errorf("invalid salt parameter: %w", err)
+		} else {
+			result.Salt = saltStr
+		}
+	} else {
+		return nil, fmt.Errorf("missing required parameter: salt")
+	}
+
+	return result, nil
+}
+
+// parseIntParam parses an integer parameter from various types
+func parseIntParam(value interface{}) (int, error) {
+	switch v := value.(type) {
+	case int:
+		return v, nil
+	case int32:
+		return int(v), nil
+	case int64:
+		return int(v), nil
+	case float64:
+		return int(v), nil
+	case float32:
+		return int(v), nil
+	case string:
+		if i, err := fmt.Sscanf(v, "%d", new(int)); err != nil || i != 1 {
+			return 0, fmt.Errorf("cannot parse string as integer: %s", v)
+		}
+		var result int
+		fmt.Sscanf(v, "%d", &result)
+		return result, nil
+	default:
+		return 0, fmt.Errorf("unsupported type for integer parameter: %T", value)
+	}
+}
+
+// parseSaltParam parses a salt parameter from various formats
+func parseSaltParam(value interface{}) (string, error) {
+	switch v := value.(type) {
+	case string:
+		// Validate hex string
+		if _, err := hex.DecodeString(v); err != nil {
+			return "", fmt.Errorf("invalid hex string: %w", err)
+		}
+		return v, nil
+	case []byte:
+		return hex.EncodeToString(v), nil
+	case []interface{}:
+		// Handle array of numbers (common in JSON)
+		bytes := make([]byte, len(v))
+		for i, item := range v {
+			if num, ok := item.(float64); ok {
+				if num < 0 || num > 255 {
+					return "", fmt.Errorf("byte value out of range: %f", num)
+				}
+				bytes[i] = byte(num)
+			} else {
+				return "", fmt.Errorf("array element must be number, got %T", item)
+			}
+		}
+		return hex.EncodeToString(bytes), nil
+	default:
+		return "", fmt.Errorf("unsupported type for salt parameter: %T", value)
+	}
+}
+
+// ToKDFCryptoParams converts keystore crypto parameters to KDF service format
+func (ks *KeyStoreV3) ToKDFCryptoParams() (*kdf.CryptoParams, error) {
+	if err := ks.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid keystore: %w", err)
+	}
+
+	// Convert KDFParams to map[string]interface{}
+	var kdfParams map[string]interface{}
+
+	switch ks.Crypto.KDF {
+	case "scrypt":
+		scryptParams, err := ks.GetScryptParams()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get scrypt parameters: %w", err)
+		}
+		kdfParams = map[string]interface{}{
+			"n":     scryptParams.N,
+			"r":     scryptParams.R,
+			"p":     scryptParams.P,
+			"dklen": scryptParams.DKLen,
+			"salt":  scryptParams.Salt,
+		}
+	case "pbkdf2":
+		pbkdf2Params, err := ks.GetPBKDF2Params()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get PBKDF2 parameters: %w", err)
+		}
+		kdfParams = map[string]interface{}{
+			"c":     pbkdf2Params.C,
+			"dklen": pbkdf2Params.DKLen,
+			"prf":   pbkdf2Params.PRF,
+			"salt":  pbkdf2Params.Salt,
+		}
+	default:
+		return nil, fmt.Errorf("unsupported KDF: %s", ks.Crypto.KDF)
+	}
+
+	return &kdf.CryptoParams{
+		KDF:        ks.Crypto.KDF,
+		KDFParams:  kdfParams,
+		Cipher:     ks.Crypto.Cipher,
+		CipherText: ks.Crypto.CipherText,
+		CipherParams: map[string]interface{}{
+			"iv": ks.Crypto.CipherParams.IV,
+		},
+		MAC: ks.Crypto.MAC,
+	}, nil
+}
+
+// FromKDFCryptoParams updates keystore from KDF service crypto parameters
+func (ks *KeyStoreV3) FromKDFCryptoParams(cryptoParams *kdf.CryptoParams) error {
+	if cryptoParams == nil {
+		return fmt.Errorf("crypto parameters cannot be nil")
+	}
+
+	ks.Crypto.KDF = cryptoParams.KDF
+	ks.Crypto.Cipher = cryptoParams.Cipher
+	ks.Crypto.CipherText = cryptoParams.CipherText
+	ks.Crypto.MAC = cryptoParams.MAC
+
+	// Set cipher parameters
+	if iv, ok := cryptoParams.CipherParams["iv"].(string); ok {
+		ks.Crypto.CipherParams.IV = iv
+	} else {
+		return fmt.Errorf("missing or invalid IV in cipher parameters")
+	}
+
+	// Convert and validate KDF parameters
+	switch cryptoParams.KDF {
+	case "scrypt":
+		scryptParams, err := ParseScryptParamsFromMap(cryptoParams.KDFParams)
+		if err != nil {
+			return fmt.Errorf("failed to parse scrypt parameters: %w", err)
+		}
+		if err := ks.SetScryptParamsFromStruct(scryptParams); err != nil {
+			return fmt.Errorf("failed to set scrypt parameters: %w", err)
+		}
+	case "pbkdf2":
+		pbkdf2Params, err := ParsePBKDF2ParamsFromMap(cryptoParams.KDFParams)
+		if err != nil {
+			return fmt.Errorf("failed to parse PBKDF2 parameters: %w", err)
+		}
+		if err := ks.SetPBKDF2ParamsFromStruct(pbkdf2Params); err != nil {
+			return fmt.Errorf("failed to set PBKDF2 parameters: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported KDF: %s", cryptoParams.KDF)
+	}
+
+	return nil
+}
+
 // NewKeyStoreV3 creates a new KeyStore V3 structure with default values
 func NewKeyStoreV3(address string) *KeyStoreV3 {
 	// Remove 0x prefix if present and convert to lowercase
@@ -174,6 +591,22 @@ func (ks *KeyStoreV3) SetScryptParams(n, r, p, dklen int, salt []byte) {
 	}
 }
 
+// SetScryptParamsFromStruct sets the scrypt parameters from a ScryptParams struct
+func (ks *KeyStoreV3) SetScryptParamsFromStruct(params *ScryptParams) error {
+	if params == nil {
+		return fmt.Errorf("scrypt parameters cannot be nil")
+	}
+
+	// Validate parameters before setting
+	if err := ValidateScryptParams(params); err != nil {
+		return fmt.Errorf("invalid scrypt parameters: %w", err)
+	}
+
+	ks.Crypto.KDF = "scrypt"
+	ks.Crypto.KDFParams = *params
+	return nil
+}
+
 // SetPBKDF2Params sets the PBKDF2 parameters for the keystore
 func (ks *KeyStoreV3) SetPBKDF2Params(c, dklen int, prf string, salt []byte) {
 	ks.Crypto.KDF = "pbkdf2"
@@ -183,6 +616,22 @@ func (ks *KeyStoreV3) SetPBKDF2Params(c, dklen int, prf string, salt []byte) {
 		PRF:   prf,
 		Salt:  hex.EncodeToString(salt),
 	}
+}
+
+// SetPBKDF2ParamsFromStruct sets the PBKDF2 parameters from a PBKDF2Params struct
+func (ks *KeyStoreV3) SetPBKDF2ParamsFromStruct(params *PBKDF2Params) error {
+	if params == nil {
+		return fmt.Errorf("PBKDF2 parameters cannot be nil")
+	}
+
+	// Validate parameters before setting
+	if err := ValidatePBKDF2Params(params); err != nil {
+		return fmt.Errorf("invalid PBKDF2 parameters: %w", err)
+	}
+
+	ks.Crypto.KDF = "pbkdf2"
+	ks.Crypto.KDFParams = *params
+	return nil
 }
 
 // SetCipherParams sets the cipher parameters (IV and ciphertext)
@@ -282,31 +731,25 @@ func (ks *KeyStoreV3) GetScryptParams() (*ScryptParams, error) {
 		return nil, fmt.Errorf("KDF is not scrypt")
 	}
 
-	// Convert interface{} to ScryptParams
-	paramsMap, ok := ks.Crypto.KDFParams.(map[string]interface{})
-	if !ok {
-		// Try direct type assertion
-		if params, ok := ks.Crypto.KDFParams.(ScryptParams); ok {
-			return &params, nil
-		}
-		return nil, fmt.Errorf("invalid scrypt parameters format")
+	// Try direct type assertion first
+	if params, ok := ks.Crypto.KDFParams.(ScryptParams); ok {
+		return &params, nil
 	}
 
-	params := &ScryptParams{}
-	if dklen, ok := paramsMap["dklen"].(float64); ok {
-		params.DKLen = int(dklen)
+	// Convert interface{} to ScryptParams using flexible parsing
+	paramsMap, ok := ks.Crypto.KDFParams.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid scrypt parameters format: expected map[string]interface{} or ScryptParams")
 	}
-	if n, ok := paramsMap["n"].(float64); ok {
-		params.N = int(n)
+
+	params, err := ParseScryptParamsFromMap(paramsMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse scrypt parameters: %w", err)
 	}
-	if p, ok := paramsMap["p"].(float64); ok {
-		params.P = int(p)
-	}
-	if r, ok := paramsMap["r"].(float64); ok {
-		params.R = int(r)
-	}
-	if salt, ok := paramsMap["salt"].(string); ok {
-		params.Salt = salt
+
+	// Validate the parsed parameters
+	if err := ValidateScryptParams(params); err != nil {
+		return nil, fmt.Errorf("invalid scrypt parameters: %w", err)
 	}
 
 	return params, nil
@@ -318,28 +761,25 @@ func (ks *KeyStoreV3) GetPBKDF2Params() (*PBKDF2Params, error) {
 		return nil, fmt.Errorf("KDF is not pbkdf2")
 	}
 
-	// Convert interface{} to PBKDF2Params
-	paramsMap, ok := ks.Crypto.KDFParams.(map[string]interface{})
-	if !ok {
-		// Try direct type assertion
-		if params, ok := ks.Crypto.KDFParams.(PBKDF2Params); ok {
-			return &params, nil
-		}
-		return nil, fmt.Errorf("invalid PBKDF2 parameters format")
+	// Try direct type assertion first
+	if params, ok := ks.Crypto.KDFParams.(PBKDF2Params); ok {
+		return &params, nil
 	}
 
-	params := &PBKDF2Params{}
-	if dklen, ok := paramsMap["dklen"].(float64); ok {
-		params.DKLen = int(dklen)
+	// Convert interface{} to PBKDF2Params using flexible parsing
+	paramsMap, ok := ks.Crypto.KDFParams.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid PBKDF2 parameters format: expected map[string]interface{} or PBKDF2Params")
 	}
-	if c, ok := paramsMap["c"].(float64); ok {
-		params.C = int(c)
+
+	params, err := ParsePBKDF2ParamsFromMap(paramsMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse PBKDF2 parameters: %w", err)
 	}
-	if prf, ok := paramsMap["prf"].(string); ok {
-		params.PRF = prf
-	}
-	if salt, ok := paramsMap["salt"].(string); ok {
-		params.Salt = salt
+
+	// Validate the parsed parameters
+	if err := ValidatePBKDF2Params(params); err != nil {
+		return nil, fmt.Errorf("invalid PBKDF2 parameters: %w", err)
 	}
 
 	return params, nil
@@ -432,7 +872,7 @@ func DecryptAES128CTR(ciphertext []byte, key []byte, iv []byte) ([]byte, error) 
 	return plaintext, nil
 }
 
-// GenerateMAC generates a MAC using HMAC-SHA256 for integrity verification
+// GenerateMAC generates a MAC using Keccak256 for integrity verification (Ethereum KeyStore V3 standard)
 func GenerateMAC(derivedKey []byte, ciphertext []byte) ([]byte, error) {
 	if len(derivedKey) < 32 {
 		return nil, fmt.Errorf("derived key must be at least 32 bytes")
@@ -444,14 +884,12 @@ func GenerateMAC(derivedKey []byte, ciphertext []byte) ([]byte, error) {
 	// Use the second half of the derived key for MAC generation (Ethereum KeyStore V3 standard)
 	macKey := derivedKey[16:32]
 
-	h := hmac.New(sha256.New, macKey)
-	h.Write(derivedKey[16:32]) // MAC key
-	h.Write(ciphertext)        // Encrypted private key
-
-	return h.Sum(nil), nil
+	// Calculate MAC using Keccak256 (Ethereum standard)
+	hash := crypto.Keccak256Hash(macKey, ciphertext)
+	return hash.Bytes(), nil
 }
 
-// VerifyMAC verifies a MAC using HMAC-SHA256
+// VerifyMAC verifies a MAC using Keccak256 (Ethereum KeyStore V3 standard)
 func VerifyMAC(derivedKey []byte, ciphertext []byte, expectedMAC []byte) (bool, error) {
 	if len(expectedMAC) == 0 {
 		return false, fmt.Errorf("expected MAC cannot be empty")
@@ -462,16 +900,38 @@ func VerifyMAC(derivedKey []byte, ciphertext []byte, expectedMAC []byte) (bool, 
 		return false, fmt.Errorf("failed to compute MAC: %w", err)
 	}
 
-	return hmac.Equal(computedMAC, expectedMAC), nil
+	// Use constant time comparison for security
+	if len(computedMAC) != len(expectedMAC) {
+		return false, nil
+	}
+
+	// Constant time comparison
+	result := byte(0)
+	for i := 0; i < len(computedMAC); i++ {
+		result |= computedMAC[i] ^ expectedMAC[i]
+	}
+
+	return result == 0, nil
 }
 
 // EncryptPrivateKey encrypts a private key using the specified KDF and AES-128-CTR
-func EncryptPrivateKey(privateKeyHex string, password string, kdf string) (*KeyStoreV3, error) {
+func EncryptPrivateKey(privateKeyHex string, password string, kdfType string) (*KeyStoreV3, error) {
+	// Create a temporary service for this operation
+	config := KeyStoreConfig{
+		KDF: kdfType,
+	}
+	service := NewKeyStoreService(config)
+
+	return service.EncryptPrivateKeyWithKDF(privateKeyHex, password, kdfType)
+}
+
+// EncryptPrivateKeyWithKDF encrypts a private key using the Universal KDF service
+func (ks *KeyStoreService) EncryptPrivateKeyWithKDF(privateKeyHex string, password string, kdfType string) (*KeyStoreV3, error) {
 	if privateKeyHex == "" {
-		return nil, fmt.Errorf("private key cannot be empty")
+		return nil, NewKeyStoreError("encrypt", "private_key", fmt.Errorf("private key cannot be empty"))
 	}
 	if password == "" {
-		return nil, fmt.Errorf("password cannot be empty")
+		return nil, NewKeyStoreError("encrypt", "password", fmt.Errorf("password cannot be empty"))
 	}
 
 	// Remove 0x prefix if present
@@ -479,55 +939,97 @@ func EncryptPrivateKey(privateKeyHex string, password string, kdf string) (*KeyS
 
 	// Validate private key format
 	if len(privateKeyHex) != 64 {
-		return nil, fmt.Errorf("private key must be 64 hex characters")
+		return nil, NewKeyStoreError("validate", "private_key",
+			fmt.Errorf("private key must be 64 hex characters, got %d", len(privateKeyHex)))
 	}
 
 	privateKeyBytes, err := hex.DecodeString(privateKeyHex)
 	if err != nil {
-		return nil, fmt.Errorf("invalid private key hex: %w", err)
+		return nil, NewKeyStoreError("validate", "private_key",
+			fmt.Errorf("invalid private key hex: %w", err))
 	}
 
 	// Generate random salt and IV
 	salt, err := GenerateRandomBytes(32)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate salt: %w", err)
+		return nil, NewRecoverableKeyStoreError("encrypt", "salt", err,
+			"Failed to generate cryptographic salt. This might be due to insufficient system entropy.")
 	}
 
 	iv, err := GenerateRandomBytes(16)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate IV: %w", err)
+		return nil, NewRecoverableKeyStoreError("encrypt", "iv", err,
+			"Failed to generate initialization vector. This might be due to insufficient system entropy.")
 	}
 
-	// Derive key using specified KDF
-	var derivedKey []byte
-	switch kdf {
-	case "scrypt":
-		derivedKey, err = DeriveKeyScrypt([]byte(password), salt, 262144, 8, 1, 32)
-		if err != nil {
-			return nil, fmt.Errorf("scrypt key derivation failed: %w", err)
+	// Get default parameters for the specified KDF
+	defaultParams, err := ks.kdfService.GetDefaultParams(kdfType)
+	if err != nil {
+		if kdfErr, ok := err.(*kdf.KDFError); ok {
+			return nil, NewKDFKeyStoreError("encrypt", "kdf_params", kdfErr)
 		}
-	case "pbkdf2":
-		derivedKey, err = DeriveKeyPBKDF2([]byte(password), salt, 262144, 32)
-		if err != nil {
-			return nil, fmt.Errorf("PBKDF2 key derivation failed: %w", err)
+		return nil, NewKeyStoreError("encrypt", "kdf_params", err)
+	}
+
+	// Add salt to parameters
+	defaultParams["salt"] = hex.EncodeToString(salt)
+
+	// Create crypto parameters for KDF service
+	cryptoParams := &kdf.CryptoParams{
+		KDF:       kdfType,
+		KDFParams: defaultParams,
+	}
+
+	// Validate parameters before key derivation
+	if err := ks.kdfService.ValidateParams(kdfType, defaultParams); err != nil {
+		if kdfErr, ok := err.(*kdf.KDFError); ok {
+			return nil, NewKDFKeyStoreError("validate", "kdf_params", kdfErr)
 		}
-	default:
-		return nil, fmt.Errorf("unsupported KDF: %s", kdf)
+		return nil, NewKeyStoreError("validate", "kdf_params", err)
+	}
+
+	// Perform compatibility analysis
+	compatReport, err := ks.analyzer.AnalyzeKeystore(cryptoParams)
+	if err != nil {
+		ks.logger.LogWarning(fmt.Sprintf("Failed to analyze KDF compatibility: %v", err))
+	} else {
+		// Log compatibility warnings
+		if len(compatReport.Warnings) > 0 {
+			for _, warning := range compatReport.Warnings {
+				ks.logger.LogWarning(fmt.Sprintf("KDF compatibility warning: %s", warning))
+			}
+		}
+
+		// Log security level
+		ks.logger.LogInfo(fmt.Sprintf("KDF security level: %s", compatReport.SecurityLevel))
+	}
+
+	// Derive key using Universal KDF service
+	derivedKey, err := ks.kdfService.DeriveKey(password, cryptoParams)
+	if err != nil {
+		if kdfErr, ok := err.(*kdf.KDFError); ok {
+			return nil, NewKDFKeyStoreError("derive", "key", kdfErr)
+		}
+		return nil, NewKeyStoreError("derive", "key", err)
 	}
 
 	// Use first 16 bytes of derived key for AES encryption
+	if len(derivedKey) < 32 {
+		return nil, NewKeyStoreError("derive", "key",
+			fmt.Errorf("derived key too short: got %d bytes, need at least 32", len(derivedKey)))
+	}
 	encryptionKey := derivedKey[:16]
 
 	// Encrypt private key
 	ciphertext, err := EncryptAES128CTR(privateKeyBytes, encryptionKey, iv)
 	if err != nil {
-		return nil, fmt.Errorf("AES encryption failed: %w", err)
+		return nil, NewKeyStoreError("encrypt", "aes", fmt.Errorf("AES encryption failed: %w", err))
 	}
 
 	// Generate MAC for integrity
 	mac, err := GenerateMAC(derivedKey, ciphertext)
 	if err != nil {
-		return nil, fmt.Errorf("MAC generation failed: %w", err)
+		return nil, NewKeyStoreError("encrypt", "mac", fmt.Errorf("MAC generation failed: %w", err))
 	}
 
 	// Derive Ethereum address from private key (placeholder - would need actual implementation)
@@ -535,31 +1037,46 @@ func EncryptPrivateKey(privateKeyHex string, password string, kdf string) (*KeyS
 	address := "0000000000000000000000000000000000000000"
 
 	// Create KeyStore V3 structure
-	ks := NewKeyStoreV3(address)
-
-	// Set KDF parameters
-	switch kdf {
-	case "scrypt":
-		ks.SetScryptParams(262144, 8, 1, 32, salt)
-	case "pbkdf2":
-		ks.SetPBKDF2Params(262144, 32, "hmac-sha256", salt)
-	}
+	keystore := NewKeyStoreV3(address)
 
 	// Set cipher parameters
-	ks.SetCipherParams(iv, ciphertext)
-	ks.SetMAC(mac)
+	keystore.SetCipherParams(iv, ciphertext)
+	keystore.SetMAC(mac)
 
-	return ks, nil
+	// Set KDF parameters based on type
+	switch kdfType {
+	case "scrypt":
+		scryptParams, err := ParseScryptParamsFromMap(defaultParams)
+		if err != nil {
+			return nil, NewKeyStoreError("convert", "scrypt_params", err)
+		}
+		if err := keystore.SetScryptParamsFromStruct(scryptParams); err != nil {
+			return nil, NewKeyStoreError("set", "scrypt_params", err)
+		}
+	case "pbkdf2", "pbkdf2-sha256", "pbkdf2-sha512":
+		pbkdf2Params, err := ParsePBKDF2ParamsFromMap(defaultParams)
+		if err != nil {
+			return nil, NewKeyStoreError("convert", "pbkdf2_params", err)
+		}
+		if err := keystore.SetPBKDF2ParamsFromStruct(pbkdf2Params); err != nil {
+			return nil, NewKeyStoreError("set", "pbkdf2_params", err)
+		}
+	default:
+		return nil, NewKeyStoreError("encrypt", "kdf", fmt.Errorf("unsupported KDF: %s", kdfType))
+	}
+
+	return keystore, nil
 }
 
 // KeyStoreConfig holds configuration for keystore generation
 type KeyStoreConfig struct {
 	OutputDirectory string
 	Enabled         bool
-	Cipher          string // "aes-128-ctr"
-	KDF             string // "scrypt" or "pbkdf2"
-	MaxRetries      int    // Maximum number of retry attempts for recoverable errors
-	RetryDelay      int    // Delay between retries in milliseconds
+	Cipher          string                 // "aes-128-ctr"
+	KDF             string                 // "scrypt" or "pbkdf2"
+	KDFParams       map[string]interface{} // KDF-specific parameters
+	MaxRetries      int                    // Maximum number of retry attempts for recoverable errors
+	RetryDelay      int                    // Delay between retries in milliseconds
 }
 
 // FileOperationError represents errors that occur during file operations
@@ -615,6 +1132,8 @@ type KeyStoreService struct {
 	config      KeyStoreConfig
 	passwordGen *PasswordGenerator
 	logger      ProgressLogger
+	kdfService  *kdf.UniversalKDFService
+	analyzer    *kdf.KDFCompatibilityAnalyzer
 }
 
 // NewKeyStoreService creates a new keystore service with the given configuration
@@ -636,10 +1155,18 @@ func NewKeyStoreService(config KeyStoreConfig) *KeyStoreService {
 		config.RetryDelay = 100 // 100ms default delay
 	}
 
+	// Initialize Universal KDF service
+	kdfService := kdf.NewUniversalKDFService()
+
+	// Initialize compatibility analyzer
+	analyzer := kdf.NewKDFCompatibilityAnalyzer(kdfService)
+
 	return &KeyStoreService{
 		config:      config,
 		passwordGen: NewPasswordGenerator(),
 		logger:      &DefaultProgressLogger{VerboseMode: false},
+		kdfService:  kdfService,
+		analyzer:    analyzer,
 	}
 }
 
@@ -647,6 +1174,13 @@ func NewKeyStoreService(config KeyStoreConfig) *KeyStoreService {
 func NewKeyStoreServiceWithLogger(config KeyStoreConfig, logger ProgressLogger) *KeyStoreService {
 	service := NewKeyStoreService(config)
 	service.logger = logger
+	return service
+}
+
+// NewKeyStoreServiceWithKDFLogger creates a new keystore service with a KDF logger
+func NewKeyStoreServiceWithKDFLogger(config KeyStoreConfig, kdfLogger kdf.KDFLogger) *KeyStoreService {
+	service := NewKeyStoreService(config)
+	service.kdfService.SetLogger(kdfLogger)
 	return service
 }
 
@@ -725,9 +1259,14 @@ func (ks *KeyStoreService) GenerateKeyStore(privateKeyHex, address string) (*Key
 			"Failed to generate secure password. This might be due to insufficient system entropy. Please try again.")
 	}
 
-	// Encrypt private key using the configured KDF
-	keystore, err := EncryptPrivateKey(privateKeyHex, password, ks.config.KDF)
+	// Encrypt private key using the Universal KDF service
+	keystore, err := ks.EncryptPrivateKeyWithKDF(privateKeyHex, password, ks.config.KDF)
 	if err != nil {
+		// Error is already properly formatted from EncryptPrivateKeyWithKDF
+		if ksErr, ok := err.(*KeyStoreError); ok {
+			ksErr.Address = address // Add address information
+			return nil, "", ksErr
+		}
 		return nil, "", NewKeyStoreErrorWithAddress("encrypt", "private_key", address, err)
 	}
 
@@ -1036,12 +1575,16 @@ func (ks *KeyStoreService) SetEnabled(enabled bool) {
 	ks.config.Enabled = enabled
 }
 
-// SetKDF sets the key derivation function (scrypt or pbkdf2)
-func (ks *KeyStoreService) SetKDF(kdf string) error {
-	if kdf != "scrypt" && kdf != "pbkdf2" {
-		return fmt.Errorf("unsupported KDF: %s (supported: scrypt, pbkdf2)", kdf)
+// SetKDF sets the key derivation function using Universal KDF service validation
+func (ks *KeyStoreService) SetKDF(kdfType string) error {
+	if !ks.kdfService.IsKDFSupported(kdfType) {
+		supportedKDFs := ks.kdfService.GetSupportedKDFs()
+		return NewKDFKeyStoreError("validate", "kdf_type",
+			kdf.NewKDFError("validation", kdfType, "kdf", kdfType, supportedKDFs,
+				fmt.Sprintf("unsupported KDF: %s", kdfType)).
+				WithSuggestions(fmt.Sprintf("Supported KDFs: %v", supportedKDFs)))
 	}
-	ks.config.KDF = kdf
+	ks.config.KDF = kdfType
 	return nil
 }
 
@@ -1293,4 +1836,70 @@ func DecryptPrivateKey(ks *KeyStoreV3, password string) ([]byte, error) {
 	}
 
 	return privateKeyBytes, nil
+}
+
+// AnalyzeKeystoreCompatibility analyzes keystore compatibility with Ethereum clients
+func (ks *KeyStoreService) AnalyzeKeystoreCompatibility(keystore *KeyStoreV3) (*kdf.CompatibilityReport, error) {
+	if keystore == nil {
+		return nil, NewKeyStoreError("analyze", "keystore", fmt.Errorf("keystore cannot be nil"))
+	}
+
+	cryptoParams, err := keystore.ToKDFCryptoParams()
+	if err != nil {
+		return nil, NewKeyStoreError("analyze", "crypto_params", err)
+	}
+
+	report, err := ks.analyzer.AnalyzeKeystore(cryptoParams)
+	if err != nil {
+		return nil, NewKeyStoreError("analyze", "compatibility", err)
+	}
+
+	return report, nil
+}
+
+// OptimizeKDFParameters optimizes KDF parameters for a given security level
+func (ks *KeyStoreService) OptimizeKDFParameters(kdfType string, securityLevel kdf.SecurityLevel) (map[string]interface{}, error) {
+	// Use a reasonable default memory limit (256MB)
+	const defaultMaxMemoryMB = 256
+	return ks.OptimizeKDFParametersWithMemoryLimit(kdfType, securityLevel, defaultMaxMemoryMB)
+}
+
+// OptimizeKDFParametersWithMemoryLimit optimizes KDF parameters with a specific memory limit
+func (ks *KeyStoreService) OptimizeKDFParametersWithMemoryLimit(kdfType string, securityLevel kdf.SecurityLevel, maxMemoryMB int64) (map[string]interface{}, error) {
+	optimizedParams, err := ks.analyzer.GetOptimizedParams(kdfType, securityLevel, maxMemoryMB)
+	if err != nil {
+		if kdfErr, ok := err.(*kdf.KDFError); ok {
+			return nil, NewKDFKeyStoreError("optimize", "parameters", kdfErr)
+		}
+		return nil, NewKeyStoreError("optimize", "parameters", err)
+	}
+
+	return optimizedParams, nil
+}
+
+// ValidateKDFParameters validates KDF parameters using the Universal KDF service
+func (ks *KeyStoreService) ValidateKDFParameters(kdfType string, params map[string]interface{}) error {
+	err := ks.kdfService.ValidateParams(kdfType, params)
+	if err != nil {
+		if kdfErr, ok := err.(*kdf.KDFError); ok {
+			return NewKDFKeyStoreError("validate", "parameters", kdfErr)
+		}
+		return NewKeyStoreError("validate", "parameters", err)
+	}
+	return nil
+}
+
+// GetSupportedKDFs returns a list of supported KDF types
+func (ks *KeyStoreService) GetSupportedKDFs() []string {
+	return ks.kdfService.GetSupportedKDFs()
+}
+
+// GetKDFService returns the underlying Universal KDF service
+func (ks *KeyStoreService) GetKDFService() *kdf.UniversalKDFService {
+	return ks.kdfService
+}
+
+// GetCompatibilityAnalyzer returns the compatibility analyzer
+func (ks *KeyStoreService) GetCompatibilityAnalyzer() *kdf.KDFCompatibilityAnalyzer {
+	return ks.analyzer
 }
