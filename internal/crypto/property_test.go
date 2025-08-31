@@ -364,7 +364,6 @@ func verifyKeystoreMAC(t *testing.T, keystore *KeyStoreV3, password string) bool
 	return err == nil
 }
 
-
 func generateRandomSalt(length int) string {
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {

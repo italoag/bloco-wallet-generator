@@ -5,7 +5,7 @@ import (
 	"math"
 	"sync"
 	"time"
-	
+
 	"bloco-eth/pkg/wallet"
 )
 

@@ -185,27 +185,27 @@ func (tm *TUIManager) ShouldUseTUI() bool {
 	if termType == "" || termType == "dumb" {
 		return false
 	}
-	
+
 	// Check if we're in an interactive terminal
 	// For Claude Code and development environments, allow TUI if TERM is set properly
 	isStdoutTerminal := term.IsTerminal(int(os.Stdout.Fd()))
 	isStdinTerminal := term.IsTerminal(int(os.Stdin.Fd()))
-	
+
 	// If TERM environment suggests we have a capable terminal, allow TUI even without TTY detection
-	hasCapableTerminal := strings.Contains(termType, "xterm") || strings.Contains(termType, "screen") || 
+	hasCapableTerminal := strings.Contains(termType, "xterm") || strings.Contains(termType, "screen") ||
 		strings.Contains(termType, "tmux") || strings.Contains(termType, "color")
-	
+
 	// In development environments, be more lenient with TUI detection
 	if !isStdoutTerminal && !isStdinTerminal {
 		if os.Getenv("BLOCO_DEBUG") != "" {
 			fmt.Printf("DEBUG TUI: neither stdout nor stdin are terminals, TERM=%s\n", termType)
 		}
-		
+
 		// If we have a capable terminal environment OR we're in a development setup, allow TUI
 		if !hasCapableTerminal {
 			// Check if we're in a development environment that might support TUI
-			if os.Getenv("VSCODE_INJECTION") != "" || os.Getenv("TERM_PROGRAM") != "" || 
-			   os.Getenv("COLORTERM") != "" || len(os.Getenv("TERM")) > 0 {
+			if os.Getenv("VSCODE_INJECTION") != "" || os.Getenv("TERM_PROGRAM") != "" ||
+				os.Getenv("COLORTERM") != "" || len(os.Getenv("TERM")) > 0 {
 				if os.Getenv("BLOCO_DEBUG") != "" {
 					fmt.Printf("DEBUG TUI: development environment detected, allowing TUI\n")
 				}
