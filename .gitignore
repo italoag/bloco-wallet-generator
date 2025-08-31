@@ -6,3 +6,4 @@ build/
 *.log
 references/
 keystores/
+.crush/
