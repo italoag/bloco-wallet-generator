@@ -83,7 +83,7 @@ func TestEndToEndLoggingIntegration(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Failed to create temp dir: %v", err)
 				}
-				defer os.RemoveAll(tempDir)
+				defer func() { _ = os.RemoveAll(tempDir) }()
 
 				logFile = filepath.Join(tempDir, "test.log")
 				if tt.outputFile == "" {
@@ -97,7 +97,7 @@ func TestEndToEndLoggingIntegration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewSecureLoggerFromConfig() error: %v", err)
 			}
-			defer logger.Close()
+			defer func() { _ = logger.Close() }()
 
 			// Test IsEnabled method
 			isEnabled := logger.IsEnabled(tt.logLevel)
@@ -126,7 +126,7 @@ func TestEndToEndLoggingIntegration(t *testing.T) {
 			// Verify output if logging should occur
 			if tt.shouldLog && tt.enabled && logFile != "" {
 				// Close logger to flush any buffers
-				logger.Close()
+				_ = logger.Close()
 
 				// Check if file exists and has content
 				content, err := os.ReadFile(logFile)
@@ -170,7 +170,7 @@ func TestEndToEndLoggingIntegration(t *testing.T) {
 				}
 			} else if !tt.shouldLog && logFile != "" {
 				// Verify no output when logging should be blocked
-				logger.Close()
+				_ = logger.Close()
 
 				if _, err := os.Stat(logFile); err == nil {
 					content, _ := os.ReadFile(logFile)
@@ -241,7 +241,7 @@ func TestLoggerFactoryErrorHandling(t *testing.T) {
 			}
 
 			// Clean up
-			logger.Close()
+			_ = logger.Close()
 		})
 	}
 }
@@ -252,7 +252,7 @@ func TestWalletGenerationLogging(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logFile := filepath.Join(tempDir, "wallet.log")
 
@@ -261,7 +261,7 @@ func TestWalletGenerationLogging(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSecureLoggerFromConfig() error: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Log wallet generation
 	err = logger.LogWalletGenerated("0xdab0a527c44cc6a7f3b6fe1c375d0398db62279e", 12345, 1500000000, 3)
@@ -270,7 +270,7 @@ func TestWalletGenerationLogging(t *testing.T) {
 	}
 
 	// Close to flush
-	logger.Close()
+	_ = logger.Close()
 
 	// Verify output
 	content, err := os.ReadFile(logFile)

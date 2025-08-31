@@ -131,7 +131,7 @@ func TestNewSecureLoggerFromConfig(t *testing.T) {
 
 			// Clean up
 			if closer, ok := logger.(interface{ Close() error }); ok {
-				closer.Close()
+				_ = closer.Close()
 			}
 		})
 	}
@@ -143,7 +143,7 @@ func TestNewSecureLoggerFromConfigWithFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logFile := filepath.Join(tempDir, "test.log")
 
@@ -151,7 +151,7 @@ func TestNewSecureLoggerFromConfigWithFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSecureLoggerFromConfig() error: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Test logging to file
 	err = logger.Info("test message")
@@ -332,7 +332,7 @@ func TestIsEnabledMethod(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewSecureLogger() error: %v", err)
 			}
-			defer logger.Close()
+			defer func() { _ = logger.Close() }()
 
 			got := logger.IsEnabled(tt.testLevel)
 			if got != tt.want {
@@ -350,7 +350,7 @@ func TestLoggerFactoryWithInvalidFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSecureLoggerFromConfig() should not fail with invalid path, got error: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// The logger should fallback to stdout and still work
 	err = logger.Info("test message")

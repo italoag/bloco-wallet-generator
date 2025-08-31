@@ -152,9 +152,9 @@ func TestConfig_LoadFromEnvironment_LoggingConfig(t *testing.T) {
 	defer func() {
 		for key, value := range originalVars {
 			if value == "" {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			} else {
-				os.Setenv(key, value)
+				_ = os.Setenv(key, value)
 			}
 		}
 	}()
@@ -207,9 +207,9 @@ func TestConfig_LoadFromEnvironment_LoggingConfig(t *testing.T) {
 			// Set environment variables
 			for key, value := range tt.envVars {
 				if value == "" {
-					os.Unsetenv(key)
+					_ = os.Unsetenv(key)
 				} else {
-					os.Setenv(key, value)
+					_ = os.Setenv(key, value)
 				}
 			}
 

@@ -33,7 +33,6 @@ type StyleManager struct {
 	// Core styles
 	baseStyle     lipgloss.Style
 	headerStyle   lipgloss.Style
-	tableStyle    lipgloss.Style
 	progressStyle lipgloss.Style
 	successStyle  lipgloss.Style
 	errorStyle    lipgloss.Style

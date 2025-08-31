@@ -121,7 +121,9 @@ func (m BenchmarkModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(tea.ExitAltScreen, tea.Quit)
 		case "enter", "space":
 			if m.state == BenchmarkStateResults {
-				// Allow interaction with results table
+				// Reserved for future interaction with results table
+				// Currently no action required in results state
+				return m, nil // Explicitly return no-op command
 			}
 		}
 

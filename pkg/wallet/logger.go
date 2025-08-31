@@ -40,7 +40,7 @@ func NewWalletLogger() (*WalletLogger, error) {
 		header += "# =====================================================================================\n"
 		
 		if _, err := file.WriteString(header); err != nil {
-			file.Close()
+			_ = file.Close() // Ignore error during cleanup
 			return nil, fmt.Errorf("failed to write header: %w", err)
 		}
 	}
@@ -82,7 +82,7 @@ func (wl *WalletLogger) Close() error {
 	
 	if wl.file != nil {
 		// Sync any pending writes
-		wl.file.Sync()
+		_ = wl.file.Sync() // Ignore sync errors during close
 		return wl.file.Close()
 	}
 	return nil

@@ -176,7 +176,10 @@ func TestKeyStoreService_UniversalKDFIntegration(t *testing.T) {
 
 	t.Run("parameter_conversion", func(t *testing.T) {
 		// Create a keystore with scrypt
-		service.SetKDF("scrypt")
+		err := service.SetKDF("scrypt")
+		if err != nil {
+			t.Fatalf("Failed to set KDF to scrypt: %v", err)
+		}
 		privateKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 		address := "1234567890abcdef1234567890abcdef12345678"
 

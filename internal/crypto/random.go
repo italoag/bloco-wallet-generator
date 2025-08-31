@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"runtime"
-	"unsafe"
 )
 
 // EntropyValidator provides methods to validate entropy quality
@@ -224,16 +223,13 @@ func (mc *MemoryCleaner) ClearString(s *string) {
 		return
 	}
 
-	// Convert string to byte slice using unsafe operations
-	// This is a best-effort approach since Go strings are immutable
-	header := (*[2]uintptr)(unsafe.Pointer(s))
-	data := (*[1 << 30]byte)(unsafe.Pointer(header[0]))[:len(*s):len(*s)]
-
-	// Clear the underlying bytes
-	mc.ClearBytes(data)
-
-	// Set string to empty
+	// Since Go strings are immutable, we can only clear the reference
+	// The actual string data in memory may remain until garbage collected
+	// This is a limitation of Go's memory model for strings
 	*s = ""
+
+	// Force garbage collection to help clear unreferenced string data
+	runtime.GC()
 }
 
 // ClearByteSlices clears multiple byte slices

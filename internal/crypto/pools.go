@@ -79,12 +79,14 @@ func NewCryptoPool(config PoolConfig) *CryptoPool {
 	return &CryptoPool{
 		privateKeyPool: sync.Pool{
 			New: func() interface{} {
-				return make([]byte, 32)
+				slice := make([]byte, 32)
+				return &slice
 			},
 		},
 		publicKeyPool: sync.Pool{
 			New: func() interface{} {
-				return make([]byte, 64)
+				slice := make([]byte, 64)
+				return &slice
 			},
 		},
 		bigIntPool: sync.Pool{
@@ -107,7 +109,7 @@ func NewCryptoPool(config PoolConfig) *CryptoPool {
 
 // GetPrivateKeyBuffer gets a private key buffer from the pool
 func (cp *CryptoPool) GetPrivateKeyBuffer() []byte {
-	return cp.privateKeyPool.Get().([]byte)
+	return *cp.privateKeyPool.Get().(*[]byte)
 }
 
 // PutPrivateKeyBuffer returns a private key buffer to the pool
@@ -118,12 +120,12 @@ func (cp *CryptoPool) PutPrivateKeyBuffer(buf []byte) {
 			buf[i] = 0
 		}
 	}
-	cp.privateKeyPool.Put(buf)
+	cp.privateKeyPool.Put(&buf)
 }
 
 // GetPublicKeyBuffer gets a public key buffer from the pool
 func (cp *CryptoPool) GetPublicKeyBuffer() []byte {
-	return cp.publicKeyPool.Get().([]byte)
+	return *cp.publicKeyPool.Get().(*[]byte)
 }
 
 // PutPublicKeyBuffer returns a public key buffer to the pool
@@ -134,7 +136,7 @@ func (cp *CryptoPool) PutPublicKeyBuffer(buf []byte) {
 			buf[i] = 0
 		}
 	}
-	cp.publicKeyPool.Put(buf)
+	cp.publicKeyPool.Put(&buf)
 }
 
 // GetBigInt gets a big.Int from the pool
@@ -157,8 +159,8 @@ func (cp *CryptoPool) GetECDSAKey() *ecdsa.PrivateKey {
 	key := cp.ecdsaKeyPool.Get().(*ecdsa.PrivateKey)
 	// Reset the key
 	key.D = nil
-	key.PublicKey.X = nil
-	key.PublicKey.Y = nil
+	key.X = nil
+	key.Y = nil
 	return key
 }
 
@@ -169,11 +171,11 @@ func (cp *CryptoPool) PutECDSAKey(key *ecdsa.PrivateKey) {
 		if key.D != nil {
 			key.D.SetInt64(0)
 		}
-		if key.PublicKey.X != nil {
-			key.PublicKey.X.SetInt64(0)
+		if key.X != nil {
+			key.X.SetInt64(0)
 		}
-		if key.PublicKey.Y != nil {
-			key.PublicKey.Y.SetInt64(0)
+		if key.Y != nil {
+			key.Y.SetInt64(0)
 		}
 	}
 	cp.ecdsaKeyPool.Put(key)
@@ -209,7 +211,8 @@ func NewBufferPool(config PoolConfig) *BufferPool {
 	return &BufferPool{
 		byteBufferPool: sync.Pool{
 			New: func() interface{} {
-				return make([]byte, 0, 64) // Pre-allocate capacity for typical use
+				slice := make([]byte, 0, 64) // Pre-allocate capacity for typical use
+				return &slice
 			},
 		},
 		stringBuilderPool: sync.Pool{
@@ -219,7 +222,8 @@ func NewBufferPool(config PoolConfig) *BufferPool {
 		},
 		hexBufferPool: sync.Pool{
 			New: func() interface{} {
-				return make([]byte, 64) // For hex encoding/decoding
+				slice := make([]byte, 64) // For hex encoding/decoding
+				return &slice
 			},
 		},
 		config: config,
@@ -228,7 +232,7 @@ func NewBufferPool(config PoolConfig) *BufferPool {
 
 // GetByteBuffer gets a byte buffer from the pool
 func (bp *BufferPool) GetByteBuffer() []byte {
-	buf := bp.byteBufferPool.Get().([]byte)
+	buf := *bp.byteBufferPool.Get().(*[]byte)
 	return buf[:0] // Reset length but keep capacity
 }
 
@@ -240,7 +244,8 @@ func (bp *BufferPool) PutByteBuffer(buf []byte) {
 			buf[i] = 0
 		}
 	}
-	bp.byteBufferPool.Put(buf[:0])
+	trimmed := buf[:0]
+	bp.byteBufferPool.Put(&trimmed)
 }
 
 // GetStringBuilder gets a string builder from the pool
@@ -258,7 +263,7 @@ func (bp *BufferPool) PutStringBuilder(sb *strings.Builder) {
 
 // GetHexBuffer gets a hex buffer from the pool
 func (bp *BufferPool) GetHexBuffer() []byte {
-	return bp.hexBufferPool.Get().([]byte)
+	return *bp.hexBufferPool.Get().(*[]byte)
 }
 
 // PutHexBuffer returns a hex buffer to the pool
@@ -269,7 +274,7 @@ func (bp *BufferPool) PutHexBuffer(buf []byte) {
 			buf[i] = 0
 		}
 	}
-	bp.hexBufferPool.Put(buf)
+	bp.hexBufferPool.Put(&buf)
 }
 
 // DefaultPoolConfig returns a default pool configuration

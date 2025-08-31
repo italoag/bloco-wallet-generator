@@ -104,16 +104,16 @@ func TestDetectColorSupport(t *testing.T) {
 			origNoColor := os.Getenv("NO_COLOR")
 
 			// Set test environment
-			os.Setenv("TERM", tt.termType)
+			_ = os.Setenv("TERM", tt.termType)
 			if tt.colorTerm != "" {
-				os.Setenv("COLORTERM", tt.colorTerm)
+				_ = os.Setenv("COLORTERM", tt.colorTerm)
 			} else {
-				os.Unsetenv("COLORTERM")
+				_ = os.Unsetenv("COLORTERM")
 			}
 			if tt.noColor != "" {
-				os.Setenv("NO_COLOR", tt.noColor)
+				_ = os.Setenv("NO_COLOR", tt.noColor)
 			} else {
-				os.Unsetenv("NO_COLOR")
+				_ = os.Unsetenv("NO_COLOR")
 			}
 
 			// Test color detection
@@ -121,19 +121,19 @@ func TestDetectColorSupport(t *testing.T) {
 
 			// Restore original environment
 			if origTerm != "" {
-				os.Setenv("TERM", origTerm)
+				_ = os.Setenv("TERM", origTerm)
 			} else {
-				os.Unsetenv("TERM")
+				_ = os.Unsetenv("TERM")
 			}
 			if origColorTerm != "" {
-				os.Setenv("COLORTERM", origColorTerm)
+				_ = os.Setenv("COLORTERM", origColorTerm)
 			} else {
-				os.Unsetenv("COLORTERM")
+				_ = os.Unsetenv("COLORTERM")
 			}
 			if origNoColor != "" {
-				os.Setenv("NO_COLOR", origNoColor)
+				_ = os.Setenv("NO_COLOR", origNoColor)
 			} else {
-				os.Unsetenv("NO_COLOR")
+				_ = os.Unsetenv("NO_COLOR")
 			}
 
 			if result != tt.expected {
@@ -193,19 +193,19 @@ func TestDetectUnicodeSupport(t *testing.T) {
 
 			// Set test environment
 			if tt.lang != "" {
-				os.Setenv("LANG", tt.lang)
+				_ = os.Setenv("LANG", tt.lang)
 			} else {
-				os.Unsetenv("LANG")
+				_ = os.Unsetenv("LANG")
 			}
 			if tt.lcAll != "" {
-				os.Setenv("LC_ALL", tt.lcAll)
+				_ = os.Setenv("LC_ALL", tt.lcAll)
 			} else {
-				os.Unsetenv("LC_ALL")
+				_ = os.Unsetenv("LC_ALL")
 			}
 			if tt.lcCtype != "" {
-				os.Setenv("LC_CTYPE", tt.lcCtype)
+				_ = os.Setenv("LC_CTYPE", tt.lcCtype)
 			} else {
-				os.Unsetenv("LC_CTYPE")
+				_ = os.Unsetenv("LC_CTYPE")
 			}
 
 			// Test Unicode detection
@@ -213,19 +213,19 @@ func TestDetectUnicodeSupport(t *testing.T) {
 
 			// Restore original environment
 			if origLang != "" {
-				os.Setenv("LANG", origLang)
+				_ = os.Setenv("LANG", origLang)
 			} else {
-				os.Unsetenv("LANG")
+				_ = os.Unsetenv("LANG")
 			}
 			if origLcAll != "" {
-				os.Setenv("LC_ALL", origLcAll)
+				_ = os.Setenv("LC_ALL", origLcAll)
 			} else {
-				os.Unsetenv("LC_ALL")
+				_ = os.Unsetenv("LC_ALL")
 			}
 			if origLcCtype != "" {
-				os.Setenv("LC_CTYPE", origLcCtype)
+				_ = os.Setenv("LC_CTYPE", origLcCtype)
 			} else {
-				os.Unsetenv("LC_CTYPE")
+				_ = os.Unsetenv("LC_CTYPE")
 			}
 
 			if result != tt.expected {
@@ -289,25 +289,25 @@ func TestShouldUseTUI(t *testing.T) {
 
 			// Set test environment
 			if tt.blocoTUI != "" {
-				os.Setenv("BLOCO_TUI", tt.blocoTUI)
+				_ = os.Setenv("BLOCO_TUI", tt.blocoTUI)
 			} else {
-				os.Unsetenv("BLOCO_TUI")
+				_ = os.Unsetenv("BLOCO_TUI")
 			}
-			os.Setenv("TERM", tt.termType)
+			_ = os.Setenv("TERM", tt.termType)
 
 			// Test TUI decision
 			result := manager.ShouldUseTUI()
 
 			// Restore original environment
 			if origBlocoTUI != "" {
-				os.Setenv("BLOCO_TUI", origBlocoTUI)
+				_ = os.Setenv("BLOCO_TUI", origBlocoTUI)
 			} else {
-				os.Unsetenv("BLOCO_TUI")
+				_ = os.Unsetenv("BLOCO_TUI")
 			}
 			if origTerm != "" {
-				os.Setenv("TERM", origTerm)
+				_ = os.Setenv("TERM", origTerm)
 			} else {
-				os.Unsetenv("TERM")
+				_ = os.Unsetenv("TERM")
 			}
 
 			if result != tt.expected {
@@ -332,16 +332,16 @@ func TestIsInCIEnvironment(t *testing.T) {
 			orig := os.Getenv(ciVar)
 
 			// Set CI environment variable
-			os.Setenv(ciVar, "true")
+			_ = os.Setenv(ciVar, "true")
 
 			// Test CI detection
 			result := manager.isInCIEnvironment()
 
 			// Restore original environment
 			if orig != "" {
-				os.Setenv(ciVar, orig)
+				_ = os.Setenv(ciVar, orig)
 			} else {
-				os.Unsetenv(ciVar)
+				_ = os.Unsetenv(ciVar)
 			}
 
 			if !result {
@@ -356,7 +356,7 @@ func TestIsInCIEnvironment(t *testing.T) {
 		origVars := make(map[string]string)
 		for _, ciVar := range ciVars {
 			origVars[ciVar] = os.Getenv(ciVar)
-			os.Unsetenv(ciVar)
+			_ = os.Unsetenv(ciVar)
 		}
 
 		// Test CI detection
@@ -365,7 +365,7 @@ func TestIsInCIEnvironment(t *testing.T) {
 		// Restore original environment
 		for ciVar, orig := range origVars {
 			if orig != "" {
-				os.Setenv(ciVar, orig)
+				_ = os.Setenv(ciVar, orig)
 			}
 		}
 
@@ -462,11 +462,11 @@ func TestTUIManagerEnvironmentVariableParsing(t *testing.T) {
 	origTerm := os.Getenv("TERM")
 
 	// Set a good terminal type for testing
-	os.Setenv("TERM", "xterm-256color")
+	_ = os.Setenv("TERM", "xterm-256color")
 
 	for value, shouldEnable := range testValues {
 		t.Run("BLOCO_TUI_"+value, func(t *testing.T) {
-			os.Setenv("BLOCO_TUI", value)
+			_ = os.Setenv("BLOCO_TUI", value)
 
 			// For disabled values, we expect false regardless of other conditions
 			// For enabled values, we still need to check other conditions
@@ -483,13 +483,13 @@ func TestTUIManagerEnvironmentVariableParsing(t *testing.T) {
 
 	// Restore environment
 	if origBlocoTUI != "" {
-		os.Setenv("BLOCO_TUI", origBlocoTUI)
+		_ = os.Setenv("BLOCO_TUI", origBlocoTUI)
 	} else {
-		os.Unsetenv("BLOCO_TUI")
+		_ = os.Unsetenv("BLOCO_TUI")
 	}
 	if origTerm != "" {
-		os.Setenv("TERM", origTerm)
+		_ = os.Setenv("TERM", origTerm)
 	} else {
-		os.Unsetenv("TERM")
+		_ = os.Unsetenv("TERM")
 	}
 }

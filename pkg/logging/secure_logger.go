@@ -690,7 +690,7 @@ func (l *FileSecureLogger) bufferWorker() {
 				default:
 					// No more entries, flush and signal completion
 					if l.bufferWriter != nil {
-						l.bufferWriter.Flush()
+						_ = l.bufferWriter.Flush()
 					}
 					close(responseChan)
 					break drainLoop
@@ -708,7 +708,7 @@ func (l *FileSecureLogger) bufferWorker() {
 				default:
 					// Final flush before exit
 					if l.bufferWriter != nil {
-						l.bufferWriter.Flush()
+						_ = l.bufferWriter.Flush()
 					}
 					return
 				}
@@ -983,8 +983,6 @@ var (
 	// Password patterns in URLs or connection strings
 	passwordURLPattern   = regexp.MustCompile(`(?i)://([^:]+):([^@]+)@`)
 	passwordParamPattern = regexp.MustCompile(`(?i)(password|pwd|pass)=([^&\s]+)`)
-	// File paths that might contain sensitive info
-	sensitivePathPattern = regexp.MustCompile(`(?i)(keystore|wallet|private|secret|\.key|\.pem)`)
 	// UTC keystore filename pattern
 	keystoreFilenamePattern = regexp.MustCompile(`UTC--[0-9T\-:.Z]+--[a-fA-F0-9]+`)
 )

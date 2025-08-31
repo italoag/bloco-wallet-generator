@@ -214,23 +214,23 @@ func ValidateScryptParams(params *ScryptParams) error {
 
 	// Validate N parameter (must be power of 2)
 	if params.N <= 0 {
-		return fmt.Errorf("N parameter must be positive, got %d", params.N)
+		return fmt.Errorf("n parameter must be positive, got %d", params.N)
 	}
 	if params.N&(params.N-1) != 0 {
-		return fmt.Errorf("N parameter must be a power of 2, got %d", params.N)
+		return fmt.Errorf("n parameter must be a power of 2, got %d", params.N)
 	}
 	if params.N < 1024 || params.N > 67108864 {
-		return fmt.Errorf("N parameter must be between 1024 and 67108864, got %d", params.N)
+		return fmt.Errorf("n parameter must be between 1024 and 67108864, got %d", params.N)
 	}
 
 	// Validate R parameter
 	if params.R <= 0 || params.R > 1024 {
-		return fmt.Errorf("R parameter must be between 1 and 1024, got %d", params.R)
+		return fmt.Errorf("r parameter must be between 1 and 1024, got %d", params.R)
 	}
 
 	// Validate P parameter
 	if params.P <= 0 || params.P > 16 {
-		return fmt.Errorf("P parameter must be between 1 and 16, got %d", params.P)
+		return fmt.Errorf("p parameter must be between 1 and 16, got %d", params.P)
 	}
 
 	// Validate DKLen parameter
@@ -430,11 +430,10 @@ func parseIntParam(value interface{}) (int, error) {
 	case float32:
 		return int(v), nil
 	case string:
-		if i, err := fmt.Sscanf(v, "%d", new(int)); err != nil || i != 1 {
+		var result int
+		if n, err := fmt.Sscanf(v, "%d", &result); err != nil || n != 1 {
 			return 0, fmt.Errorf("cannot parse string as integer: %s", v)
 		}
-		var result int
-		fmt.Sscanf(v, "%d", &result)
 		return result, nil
 	default:
 		return 0, fmt.Errorf("unsupported type for integer parameter: %T", value)
@@ -1353,18 +1352,14 @@ func (ks *KeyStoreService) SaveKeyStoreFilesToDisk(address string, keystore *Key
 	}
 
 	// Check if files already exist and warn (but don't fail)
-	if exists, err := ks.FileExists(keystorePath); err != nil {
+	if _, err := ks.FileExists(keystorePath); err != nil {
 		return NewRecoverableKeyStoreError("save", "file_check", err,
 			"Failed to check if keystore file already exists. Please try again.")
-	} else if exists {
-		// File exists, we'll overwrite it atomically
 	}
 
-	if exists, err := ks.FileExists(passwordPath); err != nil {
+	if _, err := ks.FileExists(passwordPath); err != nil {
 		return NewRecoverableKeyStoreError("save", "file_check", err,
 			"Failed to check if password file already exists. Please try again.")
-	} else if exists {
-		// File exists, we'll overwrite it atomically
 	}
 
 	// Serialize keystore to JSON
@@ -1495,11 +1490,11 @@ func (ks *KeyStoreService) writeFileAtomic(filename string, data []byte, perm os
 	defer func() {
 		// Close file if still open
 		if tmpFile != nil {
-			tmpFile.Close()
+			_ = tmpFile.Close()
 		}
 		// Remove temp file if write failed
 		if writeErr != nil {
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath)
 		}
 	}()
 
@@ -1629,8 +1624,8 @@ func (ks *KeyStoreService) CheckDirectoryPermissions() error {
 	}
 
 	// Clean up test file
-	tmpFile.Close()
-	os.Remove(tmpFile.Name())
+	_ = tmpFile.Close()
+	_ = os.Remove(tmpFile.Name())
 
 	return nil
 }

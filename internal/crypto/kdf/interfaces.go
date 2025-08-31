@@ -63,10 +63,13 @@ func (l *SecureKDFLogger) LogKDFAttempt(kdf string, params map[string]interface{
 		}
 	}
 
-	l.logger.LogOperationStart("kdf_derive", map[string]interface{}{
+	if err := l.logger.LogOperationStart("kdf_derive", map[string]interface{}{
 		"kdf_type": kdf,
 		"params":   sanitizedParams,
-	})
+	}); err != nil {
+		// Logging error shouldn't stop the operation
+		_ = err
+	}
 }
 
 // LogKDFSuccess logs successful completion of a KDF operation
@@ -75,10 +78,13 @@ func (l *SecureKDFLogger) LogKDFSuccess(kdf string, duration time.Duration) {
 		return
 	}
 
-	l.logger.LogOperationComplete("kdf_derive", logging.OperationStats{
+	if err := l.logger.LogOperationComplete("kdf_derive", logging.OperationStats{
 		Duration: duration,
 		Success:  true,
-	})
+	}); err != nil {
+		// Logging error shouldn't stop the operation
+		_ = err
+	}
 }
 
 // LogKDFError logs KDF operation errors
@@ -87,9 +93,12 @@ func (l *SecureKDFLogger) LogKDFError(kdf string, err error) {
 		return
 	}
 
-	l.logger.LogError("kdf_derive", err, map[string]interface{}{
+	if logErr := l.logger.LogError("kdf_derive", err, map[string]interface{}{
 		"kdf_type": kdf,
-	})
+	}); logErr != nil {
+		// Logging error shouldn't stop the operation
+		_ = logErr
+	}
 }
 
 // LogParamValidation logs parameter validation results
@@ -101,11 +110,14 @@ func (l *SecureKDFLogger) LogParamValidation(param string, value interface{}, va
 	// Only log validation failures to avoid cluttering logs
 	if !valid {
 		sanitizedValue := sanitizeKDFParameterValue(param, value)
-		l.logger.Warn("KDF parameter validation failed",
+		if err := l.logger.Warn("KDF parameter validation failed",
 			logging.NewLogField("parameter", param),
 			logging.NewLogField("value", sanitizedValue),
 			logging.NewLogField("valid", valid),
-		)
+		); err != nil {
+			// Logging error shouldn't stop the operation
+			_ = err
+		}
 	}
 }
 

@@ -199,7 +199,9 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 							"attempts":  attempts,
 						}
 						if logErr := p.logger.LogError("crypto_key_generation", err, context); logErr != nil {
-							// Don't print warning here as it would spam the output
+							// Intentionally ignore log errors to prevent output spam during intensive operations
+							// This ensures the worker continues operating even if logging fails
+							_ = logErr // Make the empty branch explicit
 						}
 					}
 					continue
@@ -217,7 +219,9 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 							"attempts":  attempts,
 						}
 						if logErr := p.logger.LogError("crypto_key_conversion", typeErr, context); logErr != nil {
-							// Don't print warning here as it would spam the output
+							// Intentionally ignore log errors to prevent output spam during intensive operations
+							// This ensures the worker continues operating even if logging fails
+							_ = logErr // Make the empty branch explicit
 						}
 					}
 					continue

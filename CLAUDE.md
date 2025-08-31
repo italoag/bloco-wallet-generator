@@ -4,248 +4,126 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a high-performance Ethereum bloco wallet generator built in Go. It generates Ethereum wallets with custom prefixes and/or suffixes using multi-threaded parallel processing for optimal performance. Features automatic wallet logging, EIP-55 checksum support, and comprehensive statistics collection.
+Bloco-ETH is a high-performance CLI tool for generating Ethereum wallets with custom address patterns (prefixes/suffixes). It features multi-threaded generation, TUI interface, keystore generation, benchmarking, and statistical analysis.
 
-## Key Commands
+## Build & Development Commands
 
-### Development Commands
-```bash
-# Build the application
-make build
+### Essential Commands
+- `make build` - Build the main binary (`bloco-eth`)
+- `make test` - Run all tests with verbose output
+- `make test-race` - Run tests with race detection
+- `make clean` - Clean build artifacts
+- `make run` - Build and run with default parameters (`--prefix abc --count 1`)
 
-# Run all tests with coverage
-make test-coverage
+### Testing Commands
+- `make test-unit` - Run unit tests only (skip integration tests)
+- `make test-coverage` - Generate coverage report (creates coverage.html)
+- `make bench` - Run benchmarks
 
-# Run tests with race detection
-make test-race
+### Quality Commands  
+- `make fmt` - Format code with `go fmt`
+- `make vet` - Run `go vet` for static analysis
+- `make lint` - Run golangci-lint (if installed)
+- `make dev` - Complete development workflow (fmt, vet, test, build)
 
-# Run benchmarks
-make bench
+### Cross-Platform Builds
+- `make build-all` - Build for all platforms (Linux, Windows, macOS)
+- `make build-linux`, `make build-windows`, `make build-darwin` - Platform-specific builds
 
-# Format and vet code
-make fmt && make vet
-
-# Complete development workflow (format, vet, test, build)
-make dev
-
-# CI workflow (deps, format, vet, race tests)
-make ci
-
-# Additional useful commands
-make clean      # Clean build artifacts
-make install    # Install to GOPATH/bin
-make lint       # Lint code (requires golangci-lint)
-make security   # Security checks (requires gosec)
-make demo       # Run comprehensive demo
-make examples   # Run usage examples
-make stats-test # Test statistics functionality
-```
-
-### Application Usage
-```bash
-# Generate wallet with prefix (auto-detects CPU cores)
-./bloco-eth --prefix abc --progress
-
-# Generate wallet with specific thread count
-./bloco-eth --prefix abc --threads 8
-
-# Generate wallet with EIP-55 checksum validation
-./bloco-eth --prefix ABC --checksum --threads 4
-
-# Analyze pattern difficulty
-./bloco-eth stats --prefix deadbeef --suffix 123
-
-# Run performance benchmark
-./bloco-eth benchmark --attempts 10000 --pattern "abc" --threads 8
-
-# All generated wallets are automatically logged to wallets-YYYYMMDD.log
-```
+### Application Commands
+- `./bloco-eth --help` - Show complete CLI help
+- `./bloco-eth stats --prefix abc` - Show pattern difficulty statistics
+- `./bloco-eth benchmark --attempts 5000` - Run performance benchmark
+- `BLOCO_TUI=false ./bloco-eth --prefix a --count 1` - Force text mode (no TUI)
+- `BLOCO_DEBUG=1 ./bloco-eth --prefix a` - Enable debug output
 
 ## Architecture Overview
 
-### Core Components
+### Modular Design
+The codebase has been refactored from a monolithic structure to a well-organized modular architecture:
 
-1. **Multi-threaded Architecture**
-   - `Pool` (pool.go): Streamlined worker pool with integrated statistics collection
-   - `StatsCollector` (stats.go): Thread-safe statistics aggregation across workers
-   - `ProgressManager` (progress_manager.go): Real-time progress display management
-   - `WalletLogger` (logger.go): Automatic wallet logging to daily files
-   - `ThreadMetrics`: Thread performance monitoring and efficiency calculations
-   - `ThreadValidation`: Thread count validation and CPU detection
+**Core Packages:**
+- `cmd/bloco-eth/` - Main application entry point
+- `internal/cli/` - CLI command handling and application logic
+- `internal/worker/` - Worker pool management and generation logic
+- `internal/crypto/` - Cryptographic operations, keystore generation
+- `internal/tui/` - Terminal User Interface components
+- `internal/config/` - Configuration management
+- `internal/validation/` - Address validation strategies
+- `pkg/wallet/`, `pkg/errors/`, `pkg/utils/` - Shared types and utilities
 
-2. **Wallet Logging System**
-   - `WalletLogger`: Automatic logging of all generated wallets
-   - Daily log files with timestamp (`wallets-YYYYMMDD.log`)
-   - Comprehensive data: address, public key, private key, attempts, duration
-   - Thread-safe logging with proper file handling and cleanup
-   - Incremental logging for multiple sessions per day
+### Key Components
+- **Worker Pool**: Uses `ants` library for efficient goroutine management
+- **TUI System**: Bubble Tea-based interface with fallback to text mode
+- **Keystore Generation**: Supports scrypt/PBKDF2 with KeyStore V3 format
+- **Statistics Engine**: Real-time difficulty calculations and performance metrics
+- **Secure Logging**: Never logs private keys or sensitive data
 
-3. **Terminal User Interface (TUI) System**
-   - `TUIManager` (tui/manager.go): Terminal capability detection and TUI coordination
-   - `ProgressDisplay` (tui/progress.go): Advanced progress visualization with Bubble Tea
-   - `StatsDisplay` (tui/stats.go): Real-time statistics rendering with styling
-   - `Styles` (tui/styles.go): Consistent visual theming and color schemes
-   - `Utils` (tui/utils.go): TUI utility functions and helpers
+### TUI Behavior
+- TUI automatically enables when supported and `--progress` flag is used
+- Environment variable `BLOCO_TUI=false` forces text mode
+- Environment variable `BLOCO_TUI=force` forces TUI mode (for testing)
+- Graceful fallback to text mode if TUI fails
 
-4. **Core Generation Logic**
-   - `GenerateWalletWithContext()`: Main wallet generation with context cancellation
-   - `isValidBlocoAddress()`: Pattern matching with checksum validation
-   - `toChecksumAddress()`: Complete EIP-55 checksum implementation
-   - `isEIP55Checksum()`: Validates EIP-55 checksum patterns
-   - Integrated statistics collection during generation
+### Threading
+- Auto-detects CPU cores by default (`--threads 0`)
+- Worker pool uses ants for efficient goroutine management
+- Real-time performance monitoring with thread balance scoring
 
-5. **Statistics and Analysis**
-   - `StatsCollector`: Real-time statistics collection from workers
-   - `WorkerStats`: Individual worker performance metrics
-   - `AggregatedStats`: Combined statistics across all threads
-   - `PerformanceMetrics`: Detailed performance analysis and efficiency
-   - `computeDifficulty()`: Calculates generation difficulty based on pattern length and checksum
-   - `computeProbability()`: Probability calculations for success estimates
+## Configuration System
 
-### File Structure
-- `main.go`: CLI interface and main application entry point
-- `internal/worker/pool.go`: Streamlined worker pool implementation
-- `internal/worker/stats.go`: Comprehensive statistics collection system
-- `internal/worker/interface.go`: Worker pool interface definitions
-- `pkg/wallet/types.go`: Wallet data structures and validation
-- `pkg/wallet/logger.go`: Automatic wallet logging system
-- `internal/cli/commands.go`: CLI command implementations
-- `internal/tui/`: Terminal User Interface components with Bubble Tea integration
-- `*_test.go`: Comprehensive test suite for all components
+### Environment Variables
+- `BLOCO_DEBUG=1` - Enable debug output and detailed logging
+- `BLOCO_TUI=false/true/force` - Control TUI behavior
+- Standard Go environment variables (GOOS, GOARCH) for cross-compilation
 
-## Technical Details
+### Command-Line Structure
+The CLI uses Cobra framework with these main commands:
+- Root command: Generate wallets with patterns
+- `stats` - Analyze pattern difficulty statistics
+- `benchmark` - Run performance benchmarks  
+- `version` - Show version information
 
-### Dependencies
-- `github.com/spf13/cobra`: CLI framework
-- `github.com/ethereum/go-ethereum/crypto`: Ethereum cryptographic functions
-- `golang.org/x/crypto/sha3`: Keccak-256 hashing
-- `crypto/rand`: Secure random number generation
-- `github.com/charmbracelet/bubbletea`: Terminal User Interface framework
-- `golang.org/x/term`: Terminal capability detection
+### Keystore Support
+- Automatic KeyStore V3 file generation compatible with MetaMask/geth
+- Support for scrypt and PBKDF2 key derivation functions
+- Configurable security levels and KDF parameters
+- Compatibility analysis and security recommendations
 
-### Performance Optimizations
-- **Multi-threading**: Linear scaling with CPU cores (up to 8x performance improvement)
-- **Real-time Statistics**: Worker performance monitoring with 100ms updates
-- **Thread-safe Operations**: Proper synchronization without performance penalties
-- **CPU Auto-detection**: Automatically uses all available CPU cores by default
-- **EIP-55 Checksum**: Optimized checksum validation and generation
-- **Automatic Logging**: Non-blocking wallet logging with minimal performance impact
+## Development Guidelines
 
-### Thread Safety
-- All cryptographic operations are worker-local
-- Statistics are aggregated through thread-safe channels
-- Graceful shutdown coordination when wallet is found
-- Thread-safe wallet logging with mutex protection
-- Context-based cancellation for clean shutdown
-- No shared mutable state between workers
+### Code Quality
+- Always run `make dev` before committing (formats, vets, tests, builds)
+- Maintain test coverage for new functionality
+- Follow existing patterns for error handling using `pkg/errors`
+- Never log or expose private keys in any output
 
-## Testing Strategy
+### Testing Strategy
+- Unit tests for individual components (`*_test.go` files)
+- Integration tests for cross-component functionality  
+- Property-based tests for cryptographic functions
+- Benchmark tests for performance validation
+- Use `make test-race` to detect race conditions
 
-### Test Categories
-- **Unit Tests**: Individual function testing (pool_test.go)
-- **Integration Tests**: End-to-end wallet generation and logging
-- **Performance Tests**: Multi-threading efficiency and statistics collection
-- **Statistics Tests**: Real-time metrics accuracy and aggregation
-- **TUI Tests**: Terminal interface components (tui/*_test.go)
-- **Checksum Tests**: EIP-55 validation and generation accuracy
-- **Logging Tests**: Wallet logging functionality and file handling
-
-### Running Tests
-```bash
-# Run all tests
-make test
-
-# Run with race detection
-make test-race
-
-# Generate coverage report
-make test-coverage
-
-# Run benchmarks
-make bench
-
-# Run specific test categories
-make test-unit      # Unit tests only
-make perf-test      # Performance testing
-make benchmark-test # Benchmark testing
-```
+### Modular Development
+- Keep packages focused and well-separated
+- Use interfaces for testability (see `worker.WorkerPool` interface)
+- Maintain clean dependencies between internal packages
+- Follow Go best practices for package organization
 
 ## Security Considerations
 
-- Uses cryptographically secure random number generation (`crypto/rand`)
-- Proper secp256k1 elliptic curve cryptography
-- Complete EIP-55 checksum validation and generation
-- Secure wallet logging with proper file permissions
-- No shared cryptographic state between workers
-- Thread-safe operations prevent race conditions
-- Context cancellation prevents resource leaks
+### Critical Security Rules
+- Private keys are NEVER logged, printed, or stored in plain text
+- All logging is designed to be secure by default
+- Keystore passwords use cryptographically secure random generation
+- KDF parameters are validated for security compliance
+- All cryptographic operations use established libraries (go-ethereum, x/crypto)
 
-## Common Patterns
+### Validation
+- All user inputs are validated before processing
+- Address checksum validation follows EIP-55 standard
+- Pattern validation ensures only valid hex characters
+- KDF parameter validation prevents weak configurations
 
-### Adding New CLI Commands
-1. Define command variable with `&cobra.Command{}`
-2. Add to `rootCmd` in `init()` function
-3. Define flags specific to the command
-4. Implement validation and core logic in `Run` function
-
-### Extending Statistics
-1. Add fields to `WorkerStats` or `AggregatedStats` struct
-2. Update worker statistics collection in `pool.go`
-3. Modify `StatsCollector` aggregation logic
-4. Update display functions for new metrics
-5. Ensure thread-safe access to new statistics
-
-### Performance Optimization
-- Use worker-local resources to avoid contention
-- Implement non-blocking statistics collection
-- Use channels for thread-safe communication
-- Monitor worker efficiency and thread utilization
-- Profile with `go tool pprof` when making performance changes
-- Optimize EIP-55 checksum calculations for performance
-
-### Working with TUI Components
-- TUI system automatically detects terminal capabilities
-- Use `TUIManager` for capability detection and coordination
-- Styling is centralized in `tui/styles.go` for consistency
-- All TUI components are fully tested with mock terminal support
-- Graceful fallback to basic text output when TUI is not supported
-
-## Building and Deployment
-
-### Build Targets
-```bash
-# Local build
-make build
-
-# Cross-platform builds
-make build-all  # Builds for Linux, Windows, macOS (Intel + ARM)
-
-# Individual platform builds
-make build-linux
-make build-windows  
-make build-darwin
-make build-darwin-arm64
-```
-
-### Release Process
-```bash
-# Prepare release (includes clean, CI, and all platform builds)
-make release
-```
-
-## Troubleshooting
-
-### Common Issues
-- **Build failures**: Run `go mod tidy` to resolve dependencies
-- **Performance issues**: Verify thread count with `--threads` flag
-- **Memory issues**: Check object pool usage and cleanup
-- **Test failures**: Use `make test-race` to detect race conditions
-
-### Debugging Multi-threading
-- Use `--threads 1` to test single-threaded behavior
-- Monitor thread utilization statistics in benchmark output
-- Check worker efficiency ratios for load balancing issues
-
-## Guidelines
-
-- Never use the `timeout` command, Mac OS don't have this command. 
+This architecture supports high-performance wallet generation while maintaining security, modularity, and excellent user experience through both CLI and TUI interfaces.

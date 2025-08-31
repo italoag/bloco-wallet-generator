@@ -108,7 +108,7 @@ func TestPool_GenerateWalletWithContext_SimplePattern(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start pool: %v", err)
 	}
-	defer pool.Shutdown()
+	defer func() { _ = pool.Shutdown() }()
 	
 	// Test with a simple pattern that should be found quickly
 	criteria := wallet.GenerationCriteria{
@@ -167,7 +167,7 @@ func TestPool_GenerateWalletWithContext_Cancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start pool: %v", err)
 	}
-	defer pool.Shutdown()
+	defer func() { _ = pool.Shutdown() }()
 	
 	// Use a very difficult pattern that would take a long time
 	criteria := wallet.GenerationCriteria{
@@ -214,7 +214,7 @@ func TestPool_GenerateWalletWithContext_MultipleWorkers(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to start pool: %v", err)
 			}
-			defer pool.Shutdown()
+			defer func() { _ = pool.Shutdown() }()
 			
 			criteria := wallet.GenerationCriteria{
 				Prefix:     "b",
@@ -246,7 +246,7 @@ func TestPool_GenerateWalletWithContext_InvalidCriteria(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start pool: %v", err)
 	}
-	defer pool.Shutdown()
+	defer func() { _ = pool.Shutdown() }()
 	
 	// Test with empty criteria (should still work)
 	criteria := wallet.GenerationCriteria{

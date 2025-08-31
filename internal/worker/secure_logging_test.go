@@ -21,7 +21,7 @@ func TestPool_SecureLoggingIntegration(t *testing.T) {
 
 	// Create pool with secure logging
 	pool := NewPoolWithConfig(2, cfg)
-	defer pool.Shutdown()
+	defer func() { _ = pool.Shutdown() }()
 
 	// Start the pool
 	err := pool.Start()
@@ -76,7 +76,7 @@ func TestPool_SecureLoggingDisabled(t *testing.T) {
 
 	// Create pool with disabled logging
 	pool := NewPoolWithConfig(1, cfg)
-	defer pool.Shutdown()
+	defer func() { _ = pool.Shutdown() }()
 
 	// Start the pool
 	err := pool.Start()
@@ -134,7 +134,7 @@ func TestPool_SecureLoggingErrorHandling(t *testing.T) {
 
 	// Create pool with secure logging
 	pool := NewPoolWithConfig(1, cfg)
-	defer pool.Shutdown()
+	defer func() { _ = pool.Shutdown() }()
 
 	// Start the pool
 	err := pool.Start()
@@ -173,7 +173,7 @@ func TestPool_SecureLoggingErrorHandling(t *testing.T) {
 func TestPool_BackwardCompatibility(t *testing.T) {
 	// Test that the old NewPool function still works
 	pool := NewPool(2)
-	defer pool.Shutdown()
+	defer func() { _ = pool.Shutdown() }()
 
 	// Verify pool was created successfully
 	if pool == nil {

@@ -15,7 +15,7 @@ func TestFileRotation_SizeBasedRotation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logFile := filepath.Join(tempDir, "test.log")
 
@@ -34,7 +34,7 @@ func TestFileRotation_SizeBasedRotation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Write enough log entries to trigger rotation
 	for i := 0; i < 10; i++ {
@@ -77,7 +77,7 @@ func TestFileRotation_MaxFilesLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logFile := filepath.Join(tempDir, "test.log")
 
@@ -95,7 +95,7 @@ func TestFileRotation_MaxFilesLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Write many log entries to trigger multiple rotations
 	for i := 0; i < 20; i++ {
@@ -136,7 +136,7 @@ func TestAsyncBuffering_BasicOperation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logFile := filepath.Join(tempDir, "buffered.log")
 
@@ -192,7 +192,7 @@ func TestAsyncBuffering_ConcurrentWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logFile := filepath.Join(tempDir, "concurrent.log")
 
@@ -256,7 +256,7 @@ func TestBufferOverflow_FallbackToSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logFile := filepath.Join(tempDir, "overflow.log")
 
@@ -308,7 +308,7 @@ func TestFlushMethod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logFile := filepath.Join(tempDir, "flush.log")
 
@@ -326,7 +326,7 @@ func TestFlushMethod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Write a message
 	testMessage := "Test flush message"
@@ -355,7 +355,7 @@ func TestRotationWithBuffering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logFile := filepath.Join(tempDir, "rotation_buffer.log")
 
@@ -403,7 +403,7 @@ func TestCloseWithPendingBufferedEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logFile := filepath.Join(tempDir, "close_test.log")
 
@@ -455,7 +455,7 @@ func TestRotationFileNumbering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logFile := filepath.Join(tempDir, "numbering.log")
 
@@ -484,7 +484,7 @@ func TestRotationFileNumbering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Write enough to trigger rotation
 	for i := 0; i < 5; i++ {

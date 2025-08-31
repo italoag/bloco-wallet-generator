@@ -21,7 +21,6 @@ import (
 	"bloco-eth/internal/validation"
 	"bloco-eth/internal/worker"
 	"bloco-eth/pkg/errors"
-	"bloco-eth/pkg/logging"
 	"bloco-eth/pkg/utils"
 	"bloco-eth/pkg/wallet"
 )
@@ -61,45 +60,7 @@ func (app *Application) setupCommands() {
 		Long: `Bloco-ETH is a high-performance CLI tool for generating Ethereum wallets 
 with custom prefixes and suffixes. It supports EIP-55 checksum validation,
 multi-threaded generation for optimal performance, automatic KeyStore V3
-file generation, and secure logging that never exposes sensitive data.
-
-Features:
-  • Custom prefix/suffix pattern matching
-  • EIP-55 checksum validation
-  • Multi-threaded parallel processing
-  • Automatic KeyStore V3 file generation
-  • Compatible with MetaMask, geth, and other Ethereum clients
-  • Real-time progress tracking with TUI interface
-  • Secure logging system (never logs private keys or sensitive data)
-  • Configurable log levels, formats, and rotation
-
-Examples:
-  # Generate wallet with prefix "abc" and save keystore files
-  bloco-eth --prefix abc --progress
-
-  # Generate 5 wallets with suffix "def" without keystore files
-  bloco-eth --suffix def --count 5 --no-keystore
-
-  # Generate wallet with custom keystore directory and KDF
-  bloco-eth --prefix 123 --keystore-dir ./my-keys --keystore-kdf pbkdf2
-
-  # Generate wallet with KDF compatibility analysis
-  bloco-eth --prefix abc --kdf-analysis --security-level high
-
-  # Generate wallet with custom KDF parameters
-  bloco-eth --prefix abc --keystore-kdf scrypt --kdf-params '{"n":524288,"r":8,"p":1}'
-
-  # Generate wallet with secure debug logging to file
-  bloco-eth --prefix abc --log-level debug --log-file ./operations.log
-
-  # Generate wallet with JSON logging format (secure)
-  bloco-eth --prefix abc --log-format json --log-file ./operations.json
-
-  # Generate wallet with logging completely disabled
-  bloco-eth --prefix abc --no-logging
-
-  # Generate with custom log rotation settings
-  bloco-eth --prefix abc --log-max-size 50MB --log-max-files 10`,
+file generation, and secure logging that never exposes sensitive data.`,
 		Version: fmt.Sprintf("%s (commit: %s, built: %s)", app.version, app.gitCommit, app.buildTime),
 		RunE:    app.generateWallet,
 	}
@@ -139,7 +100,7 @@ func (app *Application) addGlobalFlags() {
 	flags.String("keystore-dir", "./keystores", "Directory to save keystore files")
 	flags.Bool("no-keystore", false, "Disable keystore file generation")
 	flags.String("keystore-kdf", "scrypt", "KDF algorithm for keystore encryption (scrypt, pbkdf2, pbkdf2-sha256, pbkdf2-sha512)")
-	flags.String("kdf-params", "", "Custom KDF parameters as JSON (e.g., '{\"n\":262144,\"r\":8,\"p\":1}' for scrypt)")
+	flags.String("kdf-params", "", "Custom KDF parameters as JSON (e.g., '{\"n\":262144,\"r\":8,\"p\":1,\"dklen\":32}}' for scrypt)")
 	flags.Bool("kdf-analysis", false, "Show KDF compatibility analysis and security assessment")
 	flags.String("security-level", "medium", "Minimum security level for KDF parameters (low, medium, high, very-high)")
 
@@ -196,7 +157,12 @@ func (app *Application) generateWallet(cmd *cobra.Command, args []string) error 
 		return errors.WrapError(err, errors.ErrorTypeWorker,
 			"start_workers", "failed to start worker pool")
 	}
-	defer workerPool.Shutdown()
+	defer func() {
+		if err := workerPool.Shutdown(); err != nil {
+			// Log shutdown error but don't override the main function's return value
+			fmt.Fprintf(os.Stderr, "Warning: failed to shutdown worker pool: %v\n", err)
+		}
+	}()
 
 	// Generate wallets
 	if count == 1 {
@@ -912,7 +878,11 @@ func (app *Application) runBenchmarkTUI(ctx context.Context, attempts int, durat
 		return errors.WrapError(err, errors.ErrorTypeWorker,
 			"run_benchmark_tui", "failed to start worker pool")
 	}
-	defer workerPool.Shutdown()
+	defer func() {
+		if err := workerPool.Shutdown(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to shutdown worker pool: %v\n", err)
+		}
+	}()
 
 	// Create TUI benchmark model
 	tuiManager := tui.NewTUIManager()
@@ -962,7 +932,11 @@ func (app *Application) runBenchmarkText(ctx context.Context, attempts int, dura
 		return errors.WrapError(err, errors.ErrorTypeWorker,
 			"run_benchmark", "failed to start worker pool")
 	}
-	defer workerPool.Shutdown()
+	defer func() {
+		if err := workerPool.Shutdown(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to shutdown worker pool: %v\n", err)
+		}
+	}()
 
 	// Run benchmark
 	result, err := app.executeBenchmark(ctx, workerPool, attempts, duration)
@@ -1118,42 +1092,6 @@ func (app *Application) parseLoggingFlags(cmd *cobra.Command) error {
 	return nil
 }
 
-// createLogConfigFromConfig converts internal config to logging package config
-func (app *Application) createLogConfigFromConfig() (*logging.LogConfig, error) {
-	if !app.config.Logging.Enabled {
-		return &logging.LogConfig{Enabled: false}, nil
-	}
-
-	// Parse log level
-	level, err := logging.ParseLogLevel(app.config.Logging.Level)
-	if err != nil {
-		return nil, fmt.Errorf("invalid log level %q: %w", app.config.Logging.Level, err)
-	}
-
-	// Parse log format
-	var format logging.LogFormat
-	switch strings.ToLower(app.config.Logging.Format) {
-	case "json":
-		format = logging.JSON
-	case "structured":
-		format = logging.STRUCTURED
-	case "text":
-		format = logging.TEXT
-	default:
-		return nil, fmt.Errorf("invalid log format %q, must be one of: text, json, structured", app.config.Logging.Format)
-	}
-
-	return &logging.LogConfig{
-		Enabled:     app.config.Logging.Enabled,
-		Level:       level,
-		Format:      format,
-		OutputFile:  app.config.Logging.OutputFile,
-		MaxFileSize: app.config.Logging.MaxFileSize,
-		MaxFiles:    app.config.Logging.MaxFiles,
-		BufferSize:  app.config.Logging.BufferSize,
-	}, nil
-}
-
 // parseKDFParams parses KDF parameters from JSON string
 func (app *Application) parseKDFParams(kdfParamsStr string) error {
 	var params map[string]interface{}
@@ -1193,13 +1131,13 @@ func (app *Application) validateScryptParams(params map[string]interface{}) erro
 	if n, ok := params["n"].(float64); ok {
 		nInt := int(n)
 		if nInt <= 0 || (nInt&(nInt-1)) != 0 {
-			return fmt.Errorf("N parameter must be a positive power of 2, got %d", nInt)
+			return fmt.Errorf("n parameter must be a positive power of 2, got %d", nInt)
 		}
 		if nInt < 1024 || nInt > 67108864 {
-			return fmt.Errorf("N parameter must be between 1024 and 67108864, got %d", nInt)
+			return fmt.Errorf("n parameter must be between 1024 and 67108864, got %d", nInt)
 		}
 	} else {
-		return fmt.Errorf("N parameter must be a number")
+		return fmt.Errorf("n parameter must be a number")
 	}
 
 	// Validate r parameter
@@ -1523,7 +1461,7 @@ func (app *Application) displayMultipleWalletResults(results []*wallet.Generatio
 
 	// Show statistics summary
 	if len(results) > 1 {
-		var minAttempts, maxAttempts int64 = results[0].Attempts, results[0].Attempts
+		minAttempts, maxAttempts := results[0].Attempts, results[0].Attempts
 		var totalWalletAttempts int64
 
 		for _, result := range results {

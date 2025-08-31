@@ -79,17 +79,17 @@ func (ag *AddressGenerator) PrivateKeyToAddress(privateKey []byte) (string, erro
 	// Convert private key bytes to ECDSA private key
 	privateKeyInt.SetBytes(privateKey)
 	privateKeyECDSA.D = privateKeyInt
-	privateKeyECDSA.PublicKey.Curve = crypto.S256()
+	privateKeyECDSA.Curve = crypto.S256()
 
 	// Calculate public key coordinates
-	privateKeyECDSA.PublicKey.X, privateKeyECDSA.PublicKey.Y = crypto.S256().ScalarBaseMult(privateKey)
+	privateKeyECDSA.X, privateKeyECDSA.Y = crypto.S256().ScalarBaseMult(privateKey)
 
 	// Get uncompressed public key bytes (without 0x04 prefix)
 	publicKeyBytes = publicKeyBytes[:0] // Reset but keep capacity
 
 	// Append X and Y coordinates (32 bytes each)
-	xBytes := privateKeyECDSA.PublicKey.X.Bytes()
-	yBytes := privateKeyECDSA.PublicKey.Y.Bytes()
+	xBytes := privateKeyECDSA.X.Bytes()
+	yBytes := privateKeyECDSA.Y.Bytes()
 
 	// Pad to 32 bytes if necessary
 	for len(xBytes) < 32 {

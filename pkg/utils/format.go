@@ -331,9 +331,9 @@ func IsValidHex(hex string) bool {
 		return true
 	}
 	for _, char := range hex {
-		if !((char >= '0' && char <= '9') ||
-			(char >= 'a' && char <= 'f') ||
-			(char >= 'A' && char <= 'F')) {
+		if (char < '0' || char > '9') &&
+			(char < 'a' || char > 'f') &&
+			(char < 'A' || char > 'F') {
 			return false
 		}
 	}

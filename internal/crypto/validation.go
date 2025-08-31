@@ -193,9 +193,10 @@ func (cv *CryptographicValidator) ValidateScryptParams(params map[string]interfa
 		result.SecurityLevel = cv.determineScryptSecurityLevel(n, r, p)
 
 		// Add security-based suggestions
-		if result.SecurityLevel == SecurityLevelLow {
+		switch result.SecurityLevel {
+		case SecurityLevelLow:
 			result.Suggestions = append(result.Suggestions, "increase N parameter for better security (recommended: 262144)")
-		} else if result.SecurityLevel == SecurityLevelMedium {
+		case SecurityLevelMedium:
 			result.Suggestions = append(result.Suggestions, "consider increasing N parameter for high security applications")
 		}
 	}

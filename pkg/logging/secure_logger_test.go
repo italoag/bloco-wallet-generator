@@ -18,7 +18,7 @@ func TestNewSecureLogger(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewSecureLogger(nil) failed: %v", err)
 		}
-		defer logger.Close()
+		defer func() { _ = logger.Close() }()
 
 		if !logger.IsEnabled(INFO) {
 			t.Error("Default logger should have INFO level enabled")
@@ -39,7 +39,7 @@ func TestNewSecureLogger(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewSecureLogger() failed: %v", err)
 		}
-		defer logger.Close()
+		defer func() { _ = logger.Close() }()
 
 		if !logger.IsEnabled(DEBUG) {
 			t.Error("Logger should have DEBUG level enabled")
@@ -58,7 +58,7 @@ func TestNewSecureLogger(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewSecureLogger() failed: %v", err)
 		}
-		defer logger.Close()
+		defer func() { _ = logger.Close() }()
 
 		if logger.IsEnabled(ERROR) {
 			t.Error("Disabled logger should not have any level enabled")
@@ -94,7 +94,7 @@ func TestNewSecureLogger(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewSecureLogger() failed: %v", err)
 		}
-		defer logger.Close()
+		defer func() { _ = logger.Close() }()
 
 		// Write a test message
 		err = logger.Info("test message")
@@ -103,7 +103,7 @@ func TestNewSecureLogger(t *testing.T) {
 		}
 
 		// Close to flush
-		logger.Close()
+		_ = logger.Close()
 
 		// Check file exists and has content
 		content, err := os.ReadFile(logFile)
@@ -120,7 +120,7 @@ func TestNewSecureLogger(t *testing.T) {
 func TestFileSecureLogger_BasicLogging(t *testing.T) {
 	var buf bytes.Buffer
 	logger := createTestLogger(&buf, INFO, TEXT)
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	tests := []struct {
 		name    string
@@ -164,7 +164,7 @@ func TestFileSecureLogger_BasicLogging(t *testing.T) {
 func TestFileSecureLogger_LogWalletGenerated(t *testing.T) {
 	var buf bytes.Buffer
 	logger := createTestLogger(&buf, INFO, TEXT)
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	address := "0x1234567890abcdef1234567890abcdef12345678"
 	attempts := 42
@@ -202,7 +202,7 @@ func TestFileSecureLogger_LogWalletGenerated(t *testing.T) {
 func TestFileSecureLogger_LogOperationStart(t *testing.T) {
 	var buf bytes.Buffer
 	logger := createTestLogger(&buf, INFO, TEXT)
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	operation := "wallet_generation"
 	params := map[string]interface{}{
@@ -244,7 +244,7 @@ func TestFileSecureLogger_LogOperationStart(t *testing.T) {
 func TestFileSecureLogger_LogOperationComplete(t *testing.T) {
 	var buf bytes.Buffer
 	logger := createTestLogger(&buf, INFO, TEXT)
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	operation := "wallet_generation"
 	stats := OperationStats{
@@ -280,7 +280,7 @@ func TestFileSecureLogger_LogOperationComplete(t *testing.T) {
 func TestFileSecureLogger_LogError(t *testing.T) {
 	var buf bytes.Buffer
 	logger := createTestLogger(&buf, INFO, TEXT)
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	operation := "wallet_generation"
 	err := errors.New("test error message")
@@ -320,7 +320,7 @@ func TestFileSecureLogger_LogError(t *testing.T) {
 func TestFileSecureLogger_SetLevel(t *testing.T) {
 	var buf bytes.Buffer
 	logger := createTestLogger(&buf, INFO, TEXT)
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Initially DEBUG should be disabled
 	if logger.IsEnabled(DEBUG) {
@@ -373,7 +373,7 @@ func TestFileSecureLogger_IsEnabled(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			logger := createTestLogger(&buf, tt.configLevel, TEXT)
-			defer logger.Close()
+			defer func() { _ = logger.Close() }()
 
 			result := logger.IsEnabled(tt.testLevel)
 			if result != tt.expected {
@@ -415,7 +415,7 @@ func TestFileSecureLogger_Close(t *testing.T) {
 func TestFileSecureLogger_JSONFormat(t *testing.T) {
 	var buf bytes.Buffer
 	logger := createTestLogger(&buf, INFO, JSON)
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	err := logger.Info("test message", NewLogField("key", "value"))
 	if err != nil {
@@ -445,7 +445,7 @@ func TestFileSecureLogger_JSONFormat(t *testing.T) {
 func TestFileSecureLogger_StructuredFormat(t *testing.T) {
 	var buf bytes.Buffer
 	logger := createTestLogger(&buf, INFO, STRUCTURED)
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	err := logger.Info("test message", NewLogField("key", "value"))
 	if err != nil {
@@ -472,7 +472,7 @@ func TestFileSecureLogger_StructuredFormat(t *testing.T) {
 func TestFileSecureLogger_WithFields(t *testing.T) {
 	var buf bytes.Buffer
 	logger := createTestLogger(&buf, INFO, TEXT)
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	fields := []LogField{
 		NewLogField("string_field", "string_value"),
@@ -571,7 +571,7 @@ func TestFileSecureLogger_SetFormatter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSecureLogger() failed: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Test setting a custom formatter
 	customFormatter := NewJSONFormatter()
@@ -897,7 +897,7 @@ func TestIsSafeParameter_Enhanced(t *testing.T) {
 func TestFileSecureLogger_LogError_Enhanced(t *testing.T) {
 	var buf bytes.Buffer
 	logger := createTestLogger(&buf, INFO, JSON)
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Test error with sensitive data
 	operation := "wallet_generation"
@@ -967,7 +967,7 @@ func TestFileSecureLogger_LogError_Enhanced(t *testing.T) {
 func TestFileSecureLogger_LogOperationStart_Enhanced(t *testing.T) {
 	var buf bytes.Buffer
 	logger := createTestLogger(&buf, INFO, JSON)
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	operation := "wallet_generation"
 	params := map[string]interface{}{
@@ -1031,7 +1031,7 @@ func TestFileSecureLogger_LogOperationStart_Enhanced(t *testing.T) {
 func TestFileSecureLogger_LogOperationComplete_Enhanced(t *testing.T) {
 	var buf bytes.Buffer
 	logger := createTestLogger(&buf, INFO, JSON)
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	operation := "wallet_generation"
 
@@ -1175,7 +1175,7 @@ func TestLogError_SecurityAudit(t *testing.T) {
 	// This test performs a security audit to ensure no sensitive data leaks
 	var buf bytes.Buffer
 	logger := createTestLogger(&buf, INFO, TEXT)
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Create errors with various sensitive data patterns
 	sensitiveErrors := []error{

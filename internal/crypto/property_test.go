@@ -364,16 +364,12 @@ func verifyKeystoreMAC(t *testing.T, keystore *KeyStoreV3, password string) bool
 	return err == nil
 }
 
-func generateUUID() string {
-	// Generate a simple UUID for testing
-	bytes := make([]byte, 16)
-	rand.Read(bytes)
-	return fmt.Sprintf("%x-%x-%x-%x-%x", bytes[0:4], bytes[4:6], bytes[6:8], bytes[8:10], bytes[10:16])
-}
 
 func generateRandomSalt(length int) string {
 	bytes := make([]byte, length)
-	rand.Read(bytes)
+	if _, err := rand.Read(bytes); err != nil {
+		panic(fmt.Sprintf("Failed to generate random bytes: %v", err))
+	}
 	return hex.EncodeToString(bytes)
 }
 

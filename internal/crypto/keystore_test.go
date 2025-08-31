@@ -1398,7 +1398,7 @@ func TestKeyStoreService_SaveKeyStoreFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	tests := []struct {
 		name        string
@@ -1581,7 +1581,7 @@ func TestKeyStoreService_EndToEndWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Test both KDF algorithms
 	kdfs := []string{"scrypt", "pbkdf2"}
@@ -1684,7 +1684,7 @@ func TestKeyStoreService_EnsureOutputDirectory(t *testing.T) {
 					Enabled:         true,
 				}
 				service := NewKeyStoreService(config)
-				cleanup := func() { os.RemoveAll(tmpDir) }
+				cleanup := func() { _ = os.RemoveAll(tmpDir) }
 				return service, tmpDir, cleanup
 			},
 			wantError: false,
@@ -1693,13 +1693,15 @@ func TestKeyStoreService_EnsureOutputDirectory(t *testing.T) {
 			name: "directory already exists",
 			setupFunc: func() (*KeyStoreService, string, func()) {
 				tmpDir := filepath.Join(os.TempDir(), fmt.Sprintf("keystore-test-%d", time.Now().UnixNano()))
-				os.MkdirAll(tmpDir, 0755)
+				if err := os.MkdirAll(tmpDir, 0755); err != nil {
+					panic(fmt.Sprintf("Failed to create directory: %v", err))
+				}
 				config := KeyStoreConfig{
 					OutputDirectory: tmpDir,
 					Enabled:         true,
 				}
 				service := NewKeyStoreService(config)
-				cleanup := func() { os.RemoveAll(tmpDir) }
+				cleanup := func() { _ = os.RemoveAll(tmpDir) }
 				return service, tmpDir, cleanup
 			},
 			wantError: false,
@@ -1708,13 +1710,15 @@ func TestKeyStoreService_EnsureOutputDirectory(t *testing.T) {
 			name: "path exists but is not directory",
 			setupFunc: func() (*KeyStoreService, string, func()) {
 				tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("keystore-test-file-%d", time.Now().UnixNano()))
-				os.WriteFile(tmpFile, []byte("test"), 0644)
+				if err := os.WriteFile(tmpFile, []byte("test"), 0644); err != nil {
+					panic(fmt.Sprintf("Failed to write file: %v", err))
+				}
 				config := KeyStoreConfig{
 					OutputDirectory: tmpFile,
 					Enabled:         true,
 				}
 				service := NewKeyStoreService(config)
-				cleanup := func() { os.Remove(tmpFile) }
+				cleanup := func() { _ = os.Remove(tmpFile) }
 				return service, tmpFile, cleanup
 			},
 			wantError: true,
@@ -1776,12 +1780,14 @@ func TestKeyStoreService_WriteFileAtomic(t *testing.T) {
 			name: "successful write",
 			setupFunc: func() (*KeyStoreService, string, []byte, os.FileMode, func()) {
 				tmpDir := filepath.Join(os.TempDir(), fmt.Sprintf("keystore-test-%d", time.Now().UnixNano()))
-				os.MkdirAll(tmpDir, 0755)
+				if err := os.MkdirAll(tmpDir, 0755); err != nil {
+					panic(fmt.Sprintf("Failed to create directory: %v", err))
+				}
 				config := KeyStoreConfig{OutputDirectory: tmpDir, Enabled: true}
 				service := NewKeyStoreService(config)
 				filename := filepath.Join(tmpDir, "test.json")
 				data := []byte(`{"test": "data"}`)
-				cleanup := func() { os.RemoveAll(tmpDir) }
+				cleanup := func() { _ = os.RemoveAll(tmpDir) }
 				return service, filename, data, 0600, cleanup
 			},
 			wantError: false,
@@ -1790,13 +1796,17 @@ func TestKeyStoreService_WriteFileAtomic(t *testing.T) {
 			name: "overwrite existing file",
 			setupFunc: func() (*KeyStoreService, string, []byte, os.FileMode, func()) {
 				tmpDir := filepath.Join(os.TempDir(), fmt.Sprintf("keystore-test-%d", time.Now().UnixNano()))
-				os.MkdirAll(tmpDir, 0755)
+				if err := os.MkdirAll(tmpDir, 0755); err != nil {
+					panic(fmt.Sprintf("Failed to create directory: %v", err))
+				}
 				filename := filepath.Join(tmpDir, "test.json")
-				os.WriteFile(filename, []byte("old data"), 0644)
+				if err := os.WriteFile(filename, []byte("old data"), 0644); err != nil {
+					panic(fmt.Sprintf("Failed to write file: %v", err))
+				}
 				config := KeyStoreConfig{OutputDirectory: tmpDir, Enabled: true}
 				service := NewKeyStoreService(config)
 				data := []byte(`{"test": "new data"}`)
-				cleanup := func() { os.RemoveAll(tmpDir) }
+				cleanup := func() { _ = os.RemoveAll(tmpDir) }
 				return service, filename, data, 0600, cleanup
 			},
 			wantError: false,
@@ -1819,7 +1829,7 @@ func TestKeyStoreService_WriteFileAtomic(t *testing.T) {
 				config := KeyStoreConfig{OutputDirectory: tmpDir, Enabled: true}
 				service := NewKeyStoreService(config)
 				filename := filepath.Join(tmpDir, "test.json")
-				cleanup := func() { os.RemoveAll(tmpDir) }
+				cleanup := func() { _ = os.RemoveAll(tmpDir) }
 				return service, filename, nil, 0600, cleanup
 			},
 			wantError: true,
@@ -1833,7 +1843,7 @@ func TestKeyStoreService_WriteFileAtomic(t *testing.T) {
 				service := NewKeyStoreService(config)
 				filename := filepath.Join(tmpDir, "test.json")
 				data := []byte(`{"test": "data"}`)
-				cleanup := func() { os.RemoveAll(tmpDir) }
+				cleanup := func() { _ = os.RemoveAll(tmpDir) }
 				return service, filename, data, 0, cleanup
 			},
 			wantError: true,
@@ -1888,10 +1898,12 @@ func TestKeyStoreService_CheckDirectoryPermissions(t *testing.T) {
 			name: "valid writable directory",
 			setupFunc: func() (*KeyStoreService, func()) {
 				tmpDir := filepath.Join(os.TempDir(), fmt.Sprintf("keystore-test-%d", time.Now().UnixNano()))
-				os.MkdirAll(tmpDir, 0755)
+				if err := os.MkdirAll(tmpDir, 0755); err != nil {
+					panic(fmt.Sprintf("Failed to create directory: %v", err))
+				}
 				config := KeyStoreConfig{OutputDirectory: tmpDir, Enabled: true}
 				service := NewKeyStoreService(config)
-				cleanup := func() { os.RemoveAll(tmpDir) }
+				cleanup := func() { _ = os.RemoveAll(tmpDir) }
 				return service, cleanup
 			},
 			wantError: false,
@@ -1919,10 +1931,12 @@ func TestKeyStoreService_CheckDirectoryPermissions(t *testing.T) {
 			name: "path is not directory",
 			setupFunc: func() (*KeyStoreService, func()) {
 				tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("keystore-test-file-%d", time.Now().UnixNano()))
-				os.WriteFile(tmpFile, []byte("test"), 0644)
+				if err := os.WriteFile(tmpFile, []byte("test"), 0644); err != nil {
+					panic(fmt.Sprintf("Failed to write file: %v", err))
+				}
 				config := KeyStoreConfig{OutputDirectory: tmpFile, Enabled: true}
 				service := NewKeyStoreService(config)
-				cleanup := func() { os.Remove(tmpFile) }
+				cleanup := func() { _ = os.Remove(tmpFile) }
 				return service, cleanup
 			},
 			wantError: true,
@@ -1954,14 +1968,18 @@ func TestKeyStoreService_CheckDirectoryPermissions(t *testing.T) {
 
 func TestKeyStoreService_FileExists(t *testing.T) {
 	tmpDir := filepath.Join(os.TempDir(), fmt.Sprintf("keystore-test-%d", time.Now().UnixNano()))
-	os.MkdirAll(tmpDir, 0755)
-	defer os.RemoveAll(tmpDir)
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	config := KeyStoreConfig{OutputDirectory: tmpDir, Enabled: true}
 	service := NewKeyStoreService(config)
 
 	existingFile := filepath.Join(tmpDir, "existing.json")
-	os.WriteFile(existingFile, []byte("test"), 0644)
+	if err := os.WriteFile(existingFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
 
 	nonExistentFile := filepath.Join(tmpDir, "nonexistent.json")
 
@@ -2093,8 +2111,10 @@ func TestKeyStoreService_GetFilePaths(t *testing.T) {
 
 func TestKeyStoreService_RemoveKeystoreFiles(t *testing.T) {
 	tmpDir := filepath.Join(os.TempDir(), fmt.Sprintf("keystore-test-%d", time.Now().UnixNano()))
-	os.MkdirAll(tmpDir, 0755)
-	defer os.RemoveAll(tmpDir)
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	config := KeyStoreConfig{OutputDirectory: tmpDir, Enabled: true}
 	service := NewKeyStoreService(config)
@@ -2104,8 +2124,12 @@ func TestKeyStoreService_RemoveKeystoreFiles(t *testing.T) {
 	passwordPath := filepath.Join(tmpDir, "0x1234567890abcdef1234567890abcdef12345678.pwd")
 
 	// Create test files
-	os.WriteFile(keystorePath, []byte(`{"test": "keystore"}`), 0600)
-	os.WriteFile(passwordPath, []byte("testpassword"), 0600)
+	if err := os.WriteFile(keystorePath, []byte(`{"test": "keystore"}`), 0600); err != nil {
+		t.Fatalf("Failed to write keystore file: %v", err)
+	}
+	if err := os.WriteFile(passwordPath, []byte("testpassword"), 0600); err != nil {
+		t.Fatalf("Failed to write password file: %v", err)
+	}
 
 	// Verify files exist
 	if _, err := os.Stat(keystorePath); err != nil {
@@ -2145,15 +2169,19 @@ func TestKeyStoreService_RemoveKeystoreFiles(t *testing.T) {
 
 func TestKeyStoreService_ValidateFilePermissions(t *testing.T) {
 	tmpDir := filepath.Join(os.TempDir(), fmt.Sprintf("keystore-test-%d", time.Now().UnixNano()))
-	os.MkdirAll(tmpDir, 0755)
-	defer os.RemoveAll(tmpDir)
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	config := KeyStoreConfig{OutputDirectory: tmpDir, Enabled: true}
 	service := NewKeyStoreService(config)
 
 	// Create test file with specific permissions
 	testFile := filepath.Join(tmpDir, "test.json")
-	os.WriteFile(testFile, []byte("test"), 0600)
+	if err := os.WriteFile(testFile, []byte("test"), 0600); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
 
 	tests := []struct {
 		name         string
@@ -2229,8 +2257,10 @@ func TestFileOperationError(t *testing.T) {
 
 func TestKeyStoreService_SaveKeyStoreFiles_EnhancedErrorHandling(t *testing.T) {
 	tmpDir := filepath.Join(os.TempDir(), fmt.Sprintf("keystore-test-%d", time.Now().UnixNano()))
-	os.MkdirAll(tmpDir, 0755)
-	defer os.RemoveAll(tmpDir)
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	config := KeyStoreConfig{OutputDirectory: tmpDir, Enabled: true}
 	service := NewKeyStoreService(config)
@@ -2415,7 +2445,7 @@ func TestKeyStoreServiceRetryMechanism(t *testing.T) {
 			if tt.cleanupFunc != nil {
 				go func() {
 					time.Sleep(20 * time.Millisecond) // Allow first attempt to start
-					tt.cleanupFunc(tt.config.OutputDirectory)
+					_ = tt.cleanupFunc(tt.config.OutputDirectory)
 				}()
 			}
 
@@ -2430,7 +2460,7 @@ func TestKeyStoreServiceRetryMechanism(t *testing.T) {
 
 			// Clean up
 			if tt.cleanupFunc != nil {
-				tt.cleanupFunc(tt.config.OutputDirectory)
+				_ = tt.cleanupFunc(tt.config.OutputDirectory)
 			}
 		})
 	}

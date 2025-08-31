@@ -290,9 +290,9 @@ func (cv *ChecksumValidator) IsValidHexAddress(address string) bool {
 	}
 
 	for _, char := range address {
-		if !((char >= '0' && char <= '9') ||
-			(char >= 'a' && char <= 'f') ||
-			(char >= 'A' && char <= 'F')) {
+		if (char < '0' || char > '9') &&
+			(char < 'a' || char > 'f') &&
+			(char < 'A' || char > 'F') {
 			return false
 		}
 	}
