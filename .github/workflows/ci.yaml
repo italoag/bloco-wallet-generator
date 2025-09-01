@@ -181,7 +181,7 @@ jobs:
         GOARCH: ${{ matrix.goarch }}
         CGO_ENABLED: 0
       run: |
-        export BINARY_NAME=ghclone
+        export BINARY_NAME=bloco-eth
         if [ "$GOOS" = "windows" ]; then
           export BINARY_NAME="${BINARY_NAME}.exe"
         fi
@@ -191,12 +191,12 @@ jobs:
         go build \
           -ldflags="-w -s -X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
           -o dist/${BINARY_NAME} \
-          ./cmd/ghclone
+          ./cmd/bloco-eth
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ghclone-${{ matrix.goos }}-${{ matrix.goarch }}
+        name: bloco-eth-${{ matrix.goos }}-${{ matrix.goarch }}
         path: dist/*
 
   validate:
