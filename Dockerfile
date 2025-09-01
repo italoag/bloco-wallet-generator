@@ -1,5 +1,5 @@
 # Build arguments
-ARG GO_VERSION=1.24
+ARG GO_VERSION=1.24.6
 ARG ALPINE_VERSION=3.20
 
 # Build stage
