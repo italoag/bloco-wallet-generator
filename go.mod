@@ -1,6 +1,6 @@
 module bloco-eth
 
-go 1.24.6
+go 1.24.3
 
 require (
 	github.com/charmbracelet/bubbles v0.21.0
