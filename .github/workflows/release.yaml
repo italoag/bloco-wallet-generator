@@ -105,8 +105,6 @@ jobs:
             goarch: amd64
           - goos: darwin
             goarch: arm64
-          - goos: windows
-            goarch: amd64
 
     steps:
     - name: Checkout Code
@@ -126,11 +124,7 @@ jobs:
         GOARCH: ${{ matrix.goarch }}
         CGO_ENABLED: 0
       run: |
-        export BINARY_NAME=bloco-eth
-        if [ "$GOOS" = "windows" ]; then
-          export BINARY_NAME="${BINARY_NAME}.exe"
-        fi
-        
+        export BINARY_NAME=bloco-eth        
         mkdir -p dist
         
         go build \
@@ -142,14 +136,8 @@ jobs:
       run: |
         cd dist
         BINARY_NAME=bloco-eth
-        if [ "${{ matrix.goos }}" = "windows" ]; then
-          BINARY_NAME="${BINARY_NAME}.exe"
-          ARCHIVE_NAME="bloco-eth-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.zip"
-          zip "${ARCHIVE_NAME}" "${BINARY_NAME}"
-        else
           ARCHIVE_NAME="bloco-eth-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
           tar -czf "${ARCHIVE_NAME}" "${BINARY_NAME}"
-        fi
         echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> $GITHUB_ENV
         echo "ARCHIVE_PATH=dist/${ARCHIVE_NAME}" >> $GITHUB_ENV
 
