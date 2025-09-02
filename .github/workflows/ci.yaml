@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         go-version: ['1.24.x', '1.25.x']
       fail-fast: false
 
@@ -147,12 +147,8 @@ jobs:
     needs: [test, lint]
     strategy:
       matrix:
-        goos: [linux, darwin, windows]
+        goos: [linux, darwin]
         goarch: [amd64, arm64]
-        exclude:
-          # Windows arm64 builds are not commonly used
-          - goos: windows
-            goarch: arm64
 
     steps:
     - name: Checkout Code
@@ -182,10 +178,6 @@ jobs:
         CGO_ENABLED: 0
       run: |
         export BINARY_NAME=bloco-eth
-        if [ "$GOOS" = "windows" ]; then
-          export BINARY_NAME="${BINARY_NAME}.exe"
-        fi
-        
         mkdir -p dist
         
         go build \
