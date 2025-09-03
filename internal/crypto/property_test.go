@@ -9,6 +9,10 @@ import (
 
 // TestCryptographicProperties tests important cryptographic properties
 func TestCryptographicProperties(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping long-running cryptographic property tests in short mode")
+	}
+
 	t.Run("password_uniqueness", func(t *testing.T) {
 		testPasswordUniqueness(t)
 	})
@@ -374,6 +378,10 @@ func generateRandomSalt(length int) string {
 
 // TestCryptographicRandomness tests the quality of random number generation
 func TestCryptographicRandomness(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping cryptographic randomness tests in short mode")
+	}
+
 	t.Run("salt_randomness", func(t *testing.T) {
 		// Generate many salts and check for patterns
 		const numSalts = 1000
@@ -443,6 +451,10 @@ func TestCryptographicRandomness(t *testing.T) {
 
 // TestSecurityProperties tests security-related properties
 func TestSecurityProperties(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping security properties tests in short mode")
+	}
+
 	t.Run("password_resistance", func(t *testing.T) {
 		// Test that similar passwords produce very different outputs
 		privateKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
