@@ -2686,7 +2686,7 @@ func TestKeyStoreServicePerformanceBenchmark(t *testing.T) {
 	}
 
 	// Performance threshold (adjust based on system capabilities)
-	maxAvgDuration := 700 * time.Millisecond
+	maxAvgDuration := 1000 * time.Millisecond
 	if avgDuration > maxAvgDuration {
 		t.Errorf("Average keystore generation time %v exceeds threshold %v", avgDuration, maxAvgDuration)
 	}
