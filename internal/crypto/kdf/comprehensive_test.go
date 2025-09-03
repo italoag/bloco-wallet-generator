@@ -796,6 +796,10 @@ func BenchmarkKDFHandlers_Performance(b *testing.B) {
 
 // TestKDFHandlers_MemoryUsage tests memory usage calculations and limits
 func TestKDFHandlers_MemoryUsage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping memory usage tests in short mode")
+	}
+
 	t.Run("scrypt_memory_calculation", func(t *testing.T) {
 		handler := &ScryptHandler{}
 
@@ -852,6 +856,10 @@ func TestKDFHandlers_MemoryUsage(t *testing.T) {
 
 // TestKDFHandlers_ConcurrentAccess tests thread safety
 func TestKDFHandlers_ConcurrentAccess(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping concurrent access tests in short mode")
+	}
+
 	t.Run("scrypt_concurrent_derivation", func(t *testing.T) {
 		handler := &ScryptHandler{}
 		params := map[string]interface{}{

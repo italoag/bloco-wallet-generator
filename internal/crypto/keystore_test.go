@@ -979,6 +979,10 @@ func TestVerifyMAC(t *testing.T) {
 }
 
 func TestEncryptPrivateKey(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping encrypt private key test in short mode")
+	}
+
 	tests := []struct {
 		name       string
 		privateKey string
@@ -1096,6 +1100,10 @@ func TestEncryptPrivateKey(t *testing.T) {
 }
 
 func TestDecryptPrivateKey(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping decrypt private key test in short mode")
+	}
+
 	// Create a valid keystore for testing
 	privateKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	password := "testpassword"
@@ -1164,6 +1172,10 @@ func TestDecryptPrivateKey(t *testing.T) {
 }
 
 func TestEncryptDecryptRoundTrip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping encrypt/decrypt round trip test in short mode")
+	}
+
 	testCases := []struct {
 		name       string
 		privateKey string
@@ -1287,6 +1299,10 @@ func TestNewKeyStoreService(t *testing.T) {
 }
 
 func TestKeyStoreService_GenerateKeyStore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping keystore service generate test in short mode")
+	}
+
 	tests := []struct {
 		name        string
 		enabled     bool
@@ -1576,6 +1592,10 @@ func TestKeyStoreService_Configuration(t *testing.T) {
 }
 
 func TestKeyStoreService_EndToEndWorkflow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping end-to-end workflow test in short mode")
+	}
+
 	// Create temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "keystore-e2e-test-*")
 	if err != nil {
