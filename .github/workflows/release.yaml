@@ -16,7 +16,10 @@ env:
 permissions:
   contents: write
   issues: write
+  packages: write
+  id-token: write
   pull-requests: write
+  security-events: write
 
 jobs:
   create-release:
