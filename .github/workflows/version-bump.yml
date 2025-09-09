@@ -27,7 +27,7 @@ jobs:
       - name: Get last tag
         id: last
         run: |
-          tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.0")
           echo "tag=$tag" >> $GITHUB_OUTPUT
 
       - name: Calculate next version
@@ -40,14 +40,18 @@ jobs:
             minor="${BASH_REMATCH[2]}"
             patch="${BASH_REMATCH[3]}"
           else
-            echo "Warning: Tag '$last' does not follow semantic versioning. Defaulting to v0.0.0."
+            echo "Warning: Tag '$last' does not follow semantic versioning. Defaulting to v0.1.0."
             major=0
             minor=0
             patch=0
           fi
-          if jq -e '.pull_request.labels | any(.name | test("hotfix"; "i"))' "$GITHUB_EVENT_PATH" > /dev/null; then
+          src_branch=$(jq -r '.pull_request.head.ref' "$GITHUB_EVENT_PATH")
+          echo "Source branch: $src_branch"
+          if [[ "$src_branch" =~ ^(hotfix|bugfix)/ ]]; then
+            # hotfix/* or bugfix/* => patch bump
             patch=$((patch+1))
           else
+            # feature/* and others (default) => minor bump
             minor=$((minor+1))
             patch=0
           fi
