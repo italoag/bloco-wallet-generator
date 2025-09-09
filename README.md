@@ -26,7 +26,7 @@ A high-performance CLI tool for generating Ethereum bloco wallets with custom pr
 
 ### Prerequisites
 
-- Go 1.21 or higher
+- Go 1.24 or higher
 - Git
 
 ### Build from Source
@@ -34,7 +34,7 @@ A high-performance CLI tool for generating Ethereum bloco wallets with custom pr
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd bloco-ethereum-wallet-generator
+cd bloco-ethereum-generator
 
 # Initialize Go module and download dependencies
 go mod init bloco-eth
