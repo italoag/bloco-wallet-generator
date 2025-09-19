@@ -196,6 +196,10 @@ func (m BenchmarkModel) View() string {
 func (m BenchmarkModel) renderProgressView() string {
 	var b strings.Builder
 
+	pad := strings.Repeat(" ", padding)
+	b.WriteString(renderBlocoLogo(pad))
+	b.WriteString("\n")
+
 	// Header
 	header := m.styleManager.FormatHeader("🏃 Benchmark Running")
 	b.WriteString(header + "\n\n")
@@ -298,6 +302,10 @@ func (m BenchmarkModel) renderTransitionView() string {
 // renderResultsView renders the benchmark results table
 func (m BenchmarkModel) renderResultsView() string {
 	var b strings.Builder
+
+	pad := strings.Repeat(" ", padding)
+	b.WriteString(renderBlocoLogo(pad))
+	b.WriteString("\n")
 
 	// Header
 	header := m.styleManager.FormatHeader("📈 Benchmark Results")

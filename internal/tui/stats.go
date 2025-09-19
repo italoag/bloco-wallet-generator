@@ -157,6 +157,8 @@ func (m StatsModel) View() string {
 
 	// Title
 	content.WriteString("\n")
+	content.WriteString(renderBlocoLogo(pad))
+	content.WriteString("\n")
 	content.WriteString(pad)
 	content.WriteString(m.styleManager.FormatTitle("📊 Bloco Address Difficulty Analysis"))
 	content.WriteString("\n\n")
