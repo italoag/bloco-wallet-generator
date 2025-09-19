@@ -11,8 +11,15 @@ var blocoLogoLines = []string{
 
 func renderBlocoLogo(pad string) string {
 	var b strings.Builder
+func renderBlocoLogo(pad string) string {
+	var b strings.Builder
 	for _, line := range blocoLogoLines {
-		if len(line) == 0 {
+		b.WriteString(pad)
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
 			continue
 		}
 		b.WriteString(pad)
