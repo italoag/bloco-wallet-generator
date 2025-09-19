@@ -269,6 +269,8 @@ func (m ProgressModel) View() string {
 
 	// Title section
 	content.WriteString("\n")
+	content.WriteString(renderBlocoLogo(pad))
+	content.WriteString("\n")
 	content.WriteString(pad)
 	content.WriteString(m.styleManager.FormatTitle("🎯 Bloco Wallet Generation"))
 	content.WriteString("\n\n")
