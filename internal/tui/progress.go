@@ -294,12 +294,12 @@ func (m ProgressModel) View() string {
 	content.WriteString(pad)
 	difficultyStr := formatLargeNumber(int64(m.stats.Difficulty))
 	content.WriteString(m.styleManager.FormatKeyValue("Difficulty", difficultyStr))
-	content.WriteString("\n\n")
+	content.WriteString("\n")
 
 	// Progress bar - following Bubbletea pattern
 	content.WriteString(pad)
 	content.WriteString(m.progress.View())
-	content.WriteString("\n\n")
+	content.WriteString("\n")
 
 	// Progress information
 	content.WriteString(pad)
@@ -322,7 +322,7 @@ func (m ProgressModel) View() string {
 
 	// Statistics section using Bubbletea table-like display
 	content.WriteString(pad)
-	content.WriteString(m.styleManager.FormatSubtitle("📊 Statistics"))
+	content.WriteString(m.styleManager.FormatSubtitle("Statistics"))
 	content.WriteString("\n")
 
 	// Create formatted statistics display
@@ -335,7 +335,7 @@ func (m ProgressModel) View() string {
 		if metrics.ThreadCount > 1 {
 			content.WriteString("\n")
 			content.WriteString(pad)
-			content.WriteString(m.styleManager.FormatSubtitle("🧵 Thread Performance"))
+			content.WriteString(m.styleManager.FormatSubtitle("Thread Performance"))
 			content.WriteString("\n")
 
 			threadDisplay := m.renderThreadStats(metrics)
@@ -345,10 +345,10 @@ func (m ProgressModel) View() string {
 
 	// ADD results table BELOW progress information when we have generated wallets
 	if m.showResults && len(m.walletResults) > 0 {
-		content.WriteString("\n\n")
+		content.WriteString("\n")
 		content.WriteString(pad)
-		content.WriteString(m.styleManager.FormatSubtitle(fmt.Sprintf("💎 Generated Wallets (%d)", len(m.walletResults))))
-		content.WriteString("\n\n")
+		content.WriteString(m.styleManager.FormatSubtitle(fmt.Sprintf("Generated Wallets (%d)", len(m.walletResults))))
+		content.WriteString("\n")
 		content.WriteString(pad)
 		content.WriteString(m.resultsTable.View())
 		content.WriteString("\n")
