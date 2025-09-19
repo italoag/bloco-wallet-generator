@@ -506,7 +506,7 @@ func (m *ProgressModel) updateResultsTable() {
 			// }
 
 			privateKey := result.PrivateKey
-      // Dont truncate Ethereum private keys
+			// Dont truncate Ethereum private keys
 			// if len(privateKey) > 60 {
 			//	privateKey = privateKey[:60] + "..." // Truncate long private keys
 			//}
