@@ -272,8 +272,8 @@ func (m ProgressModel) View() string {
 	content.WriteString(renderBlocoLogo(pad))
 	content.WriteString("\n")
 	content.WriteString(pad)
-	content.WriteString(m.styleManager.FormatTitle("🎯 Bloco Wallet Generation"))
-	content.WriteString("\n\n")
+	content.WriteString(m.styleManager.FormatTitle("Wallet Generator"))
+	content.WriteString("\n")
 
 	// ALWAYS show progress information first (pattern, difficulty, progress bar, stats)
 
@@ -506,9 +506,10 @@ func (m *ProgressModel) updateResultsTable() {
 			// }
 
 			privateKey := result.PrivateKey
-			if len(privateKey) > 60 {
-				privateKey = privateKey[:60] + "..." // Truncate long private keys
-			}
+      // Dont truncate Ethereum private keys
+			// if len(privateKey) > 60 {
+			//	privateKey = privateKey[:60] + "..." // Truncate long private keys
+			//}
 
 			rows = append(rows, table.Row{
 				fmt.Sprintf("%d", result.Index),
