@@ -161,6 +161,41 @@ func TestPool_GenerateWalletWithContext_SimplePattern(t *testing.T) {
 	}
 }
 
+func TestPool_GenerateWalletWithContext_Mnemonic(t *testing.T) {
+	pool := NewPool(1)
+	if err := pool.Start(); err != nil {
+		t.Fatalf("Failed to start pool: %v", err)
+	}
+	defer func() { _ = pool.Shutdown() }()
+
+	criteria := wallet.GenerationCriteria{
+		Prefix:      "",
+		Suffix:      "",
+		IsChecksum:  false,
+		UseMnemonic: true,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := pool.GenerateWalletWithContext(ctx, criteria)
+	if err != nil {
+		t.Fatalf("GenerateWalletWithContext() returned error: %v", err)
+	}
+
+	if result == nil || result.Wallet == nil {
+		t.Fatal("Expected a wallet result when using mnemonic generation")
+	}
+
+	if result.Wallet.Mnemonic == "" {
+		t.Error("Expected mnemonic to be populated when using mnemonic generation")
+	}
+
+	if result.Wallet.PrivateKey == "" {
+		t.Error("Private key should not be empty when using mnemonic generation")
+	}
+}
+
 func TestPool_GenerateWalletWithContext_Cancellation(t *testing.T) {
 	pool := NewPool(1)
 	err := pool.Start()

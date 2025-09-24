@@ -84,6 +84,7 @@ func (app *Application) addGlobalFlags() {
 	flags.BoolP("checksum", "c", false, "Enable EIP-55 checksum validation")
 	flags.Bool("case-sensitive", false, "Enable case-sensitive pattern matching (requires --checksum)")
 	flags.IntP("count", "n", 1, "Number of wallets to generate")
+	flags.Bool("with-mnemonic", false, "Generate wallets using BIP-39 mnemonic phrases")
 
 	// Performance parameters
 	flags.IntP("threads", "t", 0, "Number of worker threads (0 = auto-detect)")
@@ -1352,11 +1353,13 @@ func (app *Application) getGenerationCriteria(cmd *cobra.Command) (wallet.Genera
 	prefix, _ := cmd.Flags().GetString("prefix")
 	suffix, _ := cmd.Flags().GetString("suffix")
 	checksum, _ := cmd.Flags().GetBool("checksum")
+	useMnemonic, _ := cmd.Flags().GetBool("with-mnemonic")
 
 	criteria := wallet.GenerationCriteria{
-		Prefix:     prefix,
-		Suffix:     suffix,
-		IsChecksum: checksum,
+		Prefix:      prefix,
+		Suffix:      suffix,
+		IsChecksum:  checksum,
+		UseMnemonic: useMnemonic,
 	}
 
 	return criteria, criteria.Validate()
@@ -1391,6 +1394,9 @@ func (app *Application) displayWalletResult(result *wallet.GenerationResult, sho
 	fmt.Printf("✅ Wallet generated successfully!\n")
 	fmt.Printf("Address: %s\n", result.Wallet.Address)
 	fmt.Printf("Private Key: %s\n", result.Wallet.PrivateKey)
+	if result.Wallet.Mnemonic != "" {
+		fmt.Printf("Mnemonic: %s\n", result.Wallet.Mnemonic)
+	}
 	fmt.Printf("Attempts: %s\n", formatLargeNumber(result.Attempts))
 	fmt.Printf("Duration: %v\n", result.Duration)
 
@@ -1426,6 +1432,9 @@ func (app *Application) displayMultipleWalletResults(results []*wallet.Generatio
 		// Only show private key if not in quiet mode
 		if !app.config.CLI.QuietMode {
 			fmt.Printf("  Private Key: %s\n", result.Wallet.PrivateKey)
+			if result.Wallet.Mnemonic != "" {
+				fmt.Printf("  Mnemonic: %s\n", result.Wallet.Mnemonic)
+			}
 		}
 
 		fmt.Printf("  Attempts: %s\n", formatLargeNumber(result.Attempts))

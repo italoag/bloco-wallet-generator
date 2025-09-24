@@ -11,6 +11,7 @@ A high-performance CLI tool for generating Ethereum bloco wallets with custom pr
 - ⚡ High-performance implementation with multi-threading support
 - 🚀 Parallel processing using all CPU cores for maximum performance
 - 🎯 Multiple wallet generation in a single run
+- 🧠 Vanity generation using BIP-39 mnemonic phrases or raw private keys
 - 🏁 Performance benchmarking tools with multi-threading support
 - 📐 Probability calculations and success predictions
 - 🔧 **IMPLEMENTED**: Configurable thread count with auto-detection
@@ -139,6 +140,9 @@ make build-all
 
 # NEW: Generate with custom keystore settings
 ./bloco-eth --prefix abc --keystore-dir ./secure-keys --keystore-kdf scrypt --count 3
+
+# NEW: Generate vanity wallet using mnemonic phrases instead of raw private keys
+./bloco-eth --prefix abc --with-mnemonic
 
 # NEW: Generate with security analysis
 ./bloco-eth --prefix abc --kdf-analysis --security-level production

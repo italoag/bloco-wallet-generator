@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	bip32 "github.com/tyler-smith/go-bip32"
+	"github.com/tyler-smith/go-bip39"
 	"golang.org/x/crypto/sha3"
 
 	"bloco-eth/internal/config"
@@ -130,10 +132,11 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 	// Log operation start
 	if p.logger != nil {
 		params := map[string]interface{}{
-			"prefix":   criteria.Prefix,
-			"suffix":   criteria.Suffix,
-			"checksum": criteria.IsChecksum,
-			"threads":  p.threadCount,
+			"prefix":       criteria.Prefix,
+			"suffix":       criteria.Suffix,
+			"checksum":     criteria.IsChecksum,
+			"threads":      p.threadCount,
+			"use_mnemonic": criteria.UseMnemonic,
 		}
 		if err := p.logger.LogOperationStart("wallet_generation", params); err != nil {
 			fmt.Printf("Warning: Failed to log operation start: %v\n", err)
@@ -189,22 +192,46 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 					lastStatsUpdate = now
 				}
 
-				// Generate private key
-				privateKey, err := ecdsa.GenerateKey(crypto.S256(), rand.Reader)
-				if err != nil {
-					// Log crypto error (but don't stop the worker)
-					if p.logger != nil {
-						context := map[string]interface{}{
-							"worker_id": workerID,
-							"attempts":  attempts,
+				// Generate private key material based on generation strategy
+				var (
+					privateKey *ecdsa.PrivateKey
+					mnemonic   string
+					err        error
+				)
+
+				if criteria.UseMnemonic {
+					mnemonic, privateKey, err = generateMnemonicPrivateKey()
+					if err != nil {
+						if p.logger != nil {
+							context := map[string]interface{}{
+								"worker_id":      workerID,
+								"attempts":       attempts,
+								"use_mnemonic":   true,
+								"error_category": "mnemonic_generation",
+							}
+							if logErr := p.logger.LogError("wallet_material_generation", err, context); logErr != nil {
+								_ = logErr
+							}
 						}
-						if logErr := p.logger.LogError("crypto_key_generation", err, context); logErr != nil {
-							// Intentionally ignore log errors to prevent output spam during intensive operations
-							// This ensures the worker continues operating even if logging fails
-							_ = logErr // Make the empty branch explicit
-						}
+						continue
 					}
-					continue
+				} else {
+					privateKey, err = ecdsa.GenerateKey(crypto.S256(), rand.Reader)
+					if err != nil {
+						// Log crypto error (but don't stop the worker)
+						if p.logger != nil {
+							context := map[string]interface{}{
+								"worker_id": workerID,
+								"attempts":  attempts,
+							}
+							if logErr := p.logger.LogError("crypto_key_generation", err, context); logErr != nil {
+								// Intentionally ignore log errors to prevent output spam during intensive operations
+								// This ensures the worker continues operating even if logging fails
+								_ = logErr // Make the empty branch explicit
+							}
+						}
+						continue
+					}
 				}
 
 				// Get public key and address
@@ -251,6 +278,7 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 							Address:    finalAddress,
 							PublicKey:  publicKeyHex,
 							PrivateKey: privateKeyHex,
+							Mnemonic:   mnemonic,
 							CreatedAt:  time.Now(),
 						},
 						Attempts: attempts,
@@ -321,6 +349,49 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 		}
 		return nil, cancellationErr
 	}
+}
+
+// generateMnemonicPrivateKey creates a new mnemonic phrase and derives the corresponding private key
+func generateMnemonicPrivateKey() (string, *ecdsa.PrivateKey, error) {
+	// Generate 128 bits of entropy for a 12-word mnemonic to balance security and performance
+	entropy, err := bip39.NewEntropy(128)
+	if err != nil {
+		return "", nil, err
+	}
+
+	mnemonic, err := bip39.NewMnemonic(entropy)
+	if err != nil {
+		return "", nil, err
+	}
+
+	seed := bip39.NewSeed(mnemonic, "")
+	masterKey, err := bip32.NewMasterKey(seed)
+	if err != nil {
+		return "", nil, err
+	}
+
+	derivationPath := []uint32{
+		bip32.FirstHardenedChild + 44,
+		bip32.FirstHardenedChild + 60,
+		bip32.FirstHardenedChild + 0,
+		0,
+		0,
+	}
+
+	key := masterKey
+	for _, child := range derivationPath {
+		key, err = key.NewChildKey(child)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+
+	privateKey, err := crypto.ToECDSA(key.Key)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return mnemonic, privateKey, nil
 }
 
 // isValidBlocoAddress checks if an address matches the criteria
