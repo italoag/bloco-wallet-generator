@@ -1407,6 +1407,61 @@ func (ks *KeyStoreService) SaveKeyStoreFilesToDisk(address string, keystore *Key
 	return nil
 }
 
+// SaveMnemonicFile persists the mnemonic phrase for a wallet using the same output rules as password files
+func (ks *KeyStoreService) SaveMnemonicFile(address, mnemonic string) error {
+	if !ks.config.Enabled {
+		return NewKeyStoreError("save", "service", fmt.Errorf("keystore generation is disabled"))
+	}
+
+	if mnemonic == "" {
+		return NewKeyStoreErrorWithAddress("save", "mnemonic", address, fmt.Errorf("mnemonic cannot be empty"))
+	}
+
+	cleanAddress := strings.ToLower(strings.TrimPrefix(address, "0x"))
+	if len(cleanAddress) != 40 {
+		return NewKeyStoreErrorWithAddress("validate", "address", address,
+			fmt.Errorf("invalid address length: expected 40 characters, got %d", len(cleanAddress)))
+	}
+
+	ks.logger.LogDebug(fmt.Sprintf("Ensuring output directory exists: %s", ks.config.OutputDirectory))
+	if err := ks.ensureOutputDirectory(); err != nil {
+		ks.logger.LogError(fmt.Sprintf("Failed to create directory %s for mnemonic: %v", ks.config.OutputDirectory, err))
+		return NewRecoverableKeyStoreError("save", "directory", err,
+			fmt.Sprintf("Failed to create keystore directory '%s'. Please check permissions and try again.", ks.config.OutputDirectory))
+	}
+
+	ks.logger.LogDebug(fmt.Sprintf("Checking directory permissions for mnemonic file: %s", ks.config.OutputDirectory))
+	if err := ks.CheckDirectoryPermissions(); err != nil {
+		ks.logger.LogError(fmt.Sprintf("Directory permission check failed for %s: %v", ks.config.OutputDirectory, err))
+		return NewRecoverableKeyStoreError("save", "directory", err,
+			fmt.Sprintf("Directory '%s' is not writable. Please check permissions and try again.", ks.config.OutputDirectory))
+	}
+
+	mnemonicPath, err := ks.GetMnemonicFilePath(address)
+	if err != nil {
+		return NewKeyStoreErrorWithAddress("save", "path", address, err)
+	}
+
+	if _, err := ks.FileExists(mnemonicPath); err != nil {
+		return NewRecoverableKeyStoreError("save", "file_check", err,
+			"Failed to check if mnemonic file already exists. Please try again.")
+	}
+
+	ks.logger.LogDebug(fmt.Sprintf("Writing mnemonic file: %s", mnemonicPath))
+	if err := ks.writeFileAtomic(mnemonicPath, []byte(mnemonic), 0600); err != nil {
+		ks.logger.LogError(fmt.Sprintf("Failed to write mnemonic file %s: %v", mnemonicPath, err))
+		return NewRecoverableKeyStoreError("save", "mnemonic_file", err,
+			fmt.Sprintf("Failed to save mnemonic file to '%s'. Please check disk space and permissions.", mnemonicPath))
+	}
+	ks.logger.LogDebug(fmt.Sprintf("Mnemonic file written successfully: %s", mnemonicPath))
+
+	if err := ks.ValidateFilePermissions(mnemonicPath, 0600); err != nil {
+		return NewKeyStoreErrorWithPath("validate", "mnemonic_permissions", mnemonicPath, err)
+	}
+
+	return nil
+}
+
 // ensureOutputDirectory creates the output directory if it doesn't exist with proper error handling
 func (ks *KeyStoreService) ensureOutputDirectory() error {
 	// Check if path is empty
@@ -1670,6 +1725,17 @@ func (ks *KeyStoreService) GetPasswordFilePath(address string) (string, error) {
 	}
 
 	filename := fmt.Sprintf("0x%s.pwd", cleanAddress)
+	return filepath.Join(ks.config.OutputDirectory, filename), nil
+}
+
+// GetMnemonicFilePath returns the full path for a mnemonic file given an address
+func (ks *KeyStoreService) GetMnemonicFilePath(address string) (string, error) {
+	cleanAddress := strings.ToLower(strings.TrimPrefix(address, "0x"))
+	if len(cleanAddress) != 40 {
+		return "", fmt.Errorf("invalid address length: expected 40 characters, got %d", len(cleanAddress))
+	}
+
+	filename := fmt.Sprintf("0x%s.mnemonic", cleanAddress)
 	return filepath.Join(ks.config.OutputDirectory, filename), nil
 }
 

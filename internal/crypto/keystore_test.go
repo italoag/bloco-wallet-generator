@@ -1548,6 +1548,73 @@ func TestKeyStoreService_SaveKeyStoreFiles(t *testing.T) {
 	}
 }
 
+func TestKeyStoreService_SaveMnemonicFile(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "mnemonic-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	validAddress := "0x1234567890abcdef1234567890abcdef12345678"
+	mnemonic := "test walk nut penalty hip pave soap entry language right filter choice"
+
+	t.Run("successfully saves mnemonic file", func(t *testing.T) {
+		service := NewKeyStoreService(KeyStoreConfig{Enabled: true, OutputDirectory: tempDir, KDF: "scrypt"})
+
+		if err := service.SaveMnemonicFile(validAddress, mnemonic); err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+
+		cleanAddress := strings.ToLower(strings.TrimPrefix(validAddress, "0x"))
+		mnemonicPath := filepath.Join(tempDir, fmt.Sprintf("0x%s.mnemonic", cleanAddress))
+
+		data, err := os.ReadFile(mnemonicPath)
+		if err != nil {
+			t.Fatalf("Failed to read mnemonic file: %v", err)
+		}
+
+		if string(data) != mnemonic {
+			t.Errorf("Mnemonic file content mismatch: expected %q, got %q", mnemonic, string(data))
+		}
+
+		info, err := os.Stat(mnemonicPath)
+		if err != nil {
+			t.Fatalf("Failed to stat mnemonic file: %v", err)
+		}
+
+		if info.Mode().Perm() != 0o600 {
+			t.Errorf("Mnemonic file permissions mismatch: expected 0600, got %o", info.Mode().Perm())
+		}
+	})
+
+	t.Run("fails when service disabled", func(t *testing.T) {
+		service := NewKeyStoreService(KeyStoreConfig{Enabled: false, OutputDirectory: tempDir, KDF: "scrypt"})
+
+		err := service.SaveMnemonicFile(validAddress, mnemonic)
+		if err == nil || !strings.Contains(err.Error(), "keystore generation is disabled") {
+			t.Fatalf("Expected disabled service error, got %v", err)
+		}
+	})
+
+	t.Run("fails with empty mnemonic", func(t *testing.T) {
+		service := NewKeyStoreService(KeyStoreConfig{Enabled: true, OutputDirectory: tempDir, KDF: "scrypt"})
+
+		err := service.SaveMnemonicFile(validAddress, "")
+		if err == nil || !strings.Contains(err.Error(), "mnemonic cannot be empty") {
+			t.Fatalf("Expected empty mnemonic error, got %v", err)
+		}
+	})
+
+	t.Run("fails with invalid address", func(t *testing.T) {
+		service := NewKeyStoreService(KeyStoreConfig{Enabled: true, OutputDirectory: tempDir, KDF: "scrypt"})
+
+		err := service.SaveMnemonicFile("0x1234", mnemonic)
+		if err == nil || !strings.Contains(err.Error(), "invalid address length") {
+			t.Fatalf("Expected invalid address error, got %v", err)
+		}
+	})
+}
+
 func TestKeyStoreService_Configuration(t *testing.T) {
 	config := KeyStoreConfig{
 		OutputDirectory: "/tmp/test",
@@ -2061,6 +2128,7 @@ func TestKeyStoreService_GetFilePaths(t *testing.T) {
 		address          string
 		wantKeystorePath string
 		wantPasswordPath string
+		wantMnemonicPath string
 		wantError        bool
 		errorMsg         string
 	}{
@@ -2069,6 +2137,7 @@ func TestKeyStoreService_GetFilePaths(t *testing.T) {
 			address:          "0x1234567890abcdef1234567890abcdef12345678",
 			wantKeystorePath: "/test/dir/0x1234567890abcdef1234567890abcdef12345678.json",
 			wantPasswordPath: "/test/dir/0x1234567890abcdef1234567890abcdef12345678.pwd",
+			wantMnemonicPath: "/test/dir/0x1234567890abcdef1234567890abcdef12345678.mnemonic",
 			wantError:        false,
 		},
 		{
@@ -2076,6 +2145,7 @@ func TestKeyStoreService_GetFilePaths(t *testing.T) {
 			address:          "1234567890abcdef1234567890abcdef12345678",
 			wantKeystorePath: "/test/dir/0x1234567890abcdef1234567890abcdef12345678.json",
 			wantPasswordPath: "/test/dir/0x1234567890abcdef1234567890abcdef12345678.pwd",
+			wantMnemonicPath: "/test/dir/0x1234567890abcdef1234567890abcdef12345678.mnemonic",
 			wantError:        false,
 		},
 		{
@@ -2123,6 +2193,22 @@ func TestKeyStoreService_GetFilePaths(t *testing.T) {
 				}
 				if passwordPath != tt.wantPasswordPath {
 					t.Errorf("Expected password path %s, got %s", tt.wantPasswordPath, passwordPath)
+				}
+			}
+
+			mnemonicPath, err := service.GetMnemonicFilePath(tt.address)
+			if tt.wantError {
+				if err == nil {
+					t.Error("Expected error for mnemonic path but got none")
+				} else if !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("Expected mnemonic error containing '%s', got '%s'", tt.errorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error for mnemonic path but got: %v", err)
+				}
+				if mnemonicPath != tt.wantMnemonicPath {
+					t.Errorf("Expected mnemonic path %s, got %s", tt.wantMnemonicPath, mnemonicPath)
 				}
 			}
 		})

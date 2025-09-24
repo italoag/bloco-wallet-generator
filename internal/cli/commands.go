@@ -1406,6 +1406,9 @@ func (app *Application) displayWalletResult(result *wallet.GenerationResult, sho
 			fmt.Printf("⚠️  Warning: Failed to generate keystore: %v\n", err)
 		} else {
 			fmt.Printf("🔐 Keystore saved to: %s\n", app.config.KeyStore.OutputDir)
+			if result.Wallet.Mnemonic != "" {
+				fmt.Printf("🧠 Mnemonic saved to: %s\n", app.config.KeyStore.OutputDir)
+			}
 		}
 	}
 
@@ -1451,6 +1454,9 @@ func (app *Application) displayMultipleWalletResults(results []*wallet.Generatio
 				fmt.Printf("  ⚠️  Keystore: Failed to generate (%v)\n", err)
 			} else {
 				fmt.Printf("  🔐 Keystore: Saved\n")
+				if result.Wallet.Mnemonic != "" {
+					fmt.Printf("  🧠 Mnemonic: Saved\n")
+				}
 			}
 		}
 
@@ -2007,6 +2013,18 @@ func (app *Application) generateAndSaveKeystoreWithVerbose(w *wallet.Wallet, ver
 			return fmt.Errorf("keystore generation failed for address %s: %v", w.Address, err)
 		}
 		return fmt.Errorf("failed to save keystore files for address %s: %w", w.Address, err)
+	}
+
+	if w.Mnemonic != "" {
+		if err := keystoreService.SaveMnemonicFile(w.Address, w.Mnemonic); err != nil {
+			if ksErr, ok := err.(*crypto.KeyStoreError); ok {
+				if ksErr.UserMessage != "" {
+					return fmt.Errorf("mnemonic save failed: %s", ksErr.UserMessage)
+				}
+				return fmt.Errorf("mnemonic save failed for address %s: %v", w.Address, err)
+			}
+			return fmt.Errorf("failed to save mnemonic file for address %s: %w", w.Address, err)
+		}
 	}
 
 	return nil
