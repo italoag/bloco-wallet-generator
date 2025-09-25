@@ -11,6 +11,7 @@ A high-performance CLI tool for generating Ethereum bloco wallets with custom pr
 - ⚡ High-performance implementation with multi-threading support
 - 🚀 Parallel processing using all CPU cores for maximum performance
 - 🎯 Multiple wallet generation in a single run
+- 🧠 Vanity generation using BIP-39 mnemonic phrases or raw private keys
 - 🏁 Performance benchmarking tools with multi-threading support
 - 📐 Probability calculations and success predictions
 - 🔧 **IMPLEMENTED**: Configurable thread count with auto-detection
@@ -139,6 +140,9 @@ make build-all
 
 # NEW: Generate with custom keystore settings
 ./bloco-eth --prefix abc --keystore-dir ./secure-keys --keystore-kdf scrypt --count 3
+
+# NEW: Generate vanity wallet using mnemonic phrases instead of raw private keys
+./bloco-eth --prefix abc --with-mnemonic
 
 # NEW: Generate with security analysis
 ./bloco-eth --prefix abc --kdf-analysis --security-level production
@@ -468,6 +472,7 @@ The tool automatically generates encrypted KeyStore V3 JSON files for each walle
 Generated files include:
 - **KeyStore JSON**: `0x{address}.json` - Encrypted private key in KeyStore V3 format
 - **Password File**: `0x{address}.pwd` - Secure password for the keystore
+- **Mnemonic File**: `0x{address}.mnemonic` - BIP-39 recovery phrase (when generated with `--with-mnemonic`)
 
 Example keystore file (`0xabc1234567890abcdef1234567890abcdef123456.json`):
 ```json
@@ -499,7 +504,7 @@ Example keystore file (`0xabc1234567890abcdef1234567890abcdef123456.json`):
 **MetaMask:**
 1. Open MetaMask → Settings → Advanced → Import Account
 2. Select "JSON File" and upload the `.json` keystore file
-3. Enter the password from the corresponding `.pwd` file
+3. Enter the password from the corresponding `.pwd` file (and keep the `.mnemonic` file safe for recovery)
 
 **geth:**
 ```bash
@@ -1179,6 +1184,7 @@ If you experience issues with keystore generation:
 4. **KeyStore import issues**
    - Verify the JSON file is valid KeyStore V3 format
    - Ensure you're using the correct password from the `.pwd` file
+   - When using mnemonic wallets, confirm the `.mnemonic` file is securely stored for recovery
    - Check that the keystore file wasn't corrupted during transfer
 
 5. **Performance issues with scrypt**

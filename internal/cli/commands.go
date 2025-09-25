@@ -84,6 +84,7 @@ func (app *Application) addGlobalFlags() {
 	flags.BoolP("checksum", "c", false, "Enable EIP-55 checksum validation")
 	flags.Bool("case-sensitive", false, "Enable case-sensitive pattern matching (requires --checksum)")
 	flags.IntP("count", "n", 1, "Number of wallets to generate")
+	flags.Bool("with-mnemonic", false, "Generate wallets using BIP-39 mnemonic phrases")
 
 	// Performance parameters
 	flags.IntP("threads", "t", 0, "Number of worker threads (0 = auto-detect)")
@@ -1352,11 +1353,13 @@ func (app *Application) getGenerationCriteria(cmd *cobra.Command) (wallet.Genera
 	prefix, _ := cmd.Flags().GetString("prefix")
 	suffix, _ := cmd.Flags().GetString("suffix")
 	checksum, _ := cmd.Flags().GetBool("checksum")
+	useMnemonic, _ := cmd.Flags().GetBool("with-mnemonic")
 
 	criteria := wallet.GenerationCriteria{
-		Prefix:     prefix,
-		Suffix:     suffix,
-		IsChecksum: checksum,
+		Prefix:      prefix,
+		Suffix:      suffix,
+		IsChecksum:  checksum,
+		UseMnemonic: useMnemonic,
 	}
 
 	return criteria, criteria.Validate()
@@ -1391,6 +1394,9 @@ func (app *Application) displayWalletResult(result *wallet.GenerationResult, sho
 	fmt.Printf("✅ Wallet generated successfully!\n")
 	fmt.Printf("Address: %s\n", result.Wallet.Address)
 	fmt.Printf("Private Key: %s\n", result.Wallet.PrivateKey)
+	if result.Wallet.Mnemonic != "" {
+		fmt.Printf("Mnemonic: %s\n", result.Wallet.Mnemonic)
+	}
 	fmt.Printf("Attempts: %s\n", formatLargeNumber(result.Attempts))
 	fmt.Printf("Duration: %v\n", result.Duration)
 
@@ -1400,6 +1406,9 @@ func (app *Application) displayWalletResult(result *wallet.GenerationResult, sho
 			fmt.Printf("⚠️  Warning: Failed to generate keystore: %v\n", err)
 		} else {
 			fmt.Printf("🔐 Keystore saved to: %s\n", app.config.KeyStore.OutputDir)
+			if result.Wallet.Mnemonic != "" {
+				fmt.Printf("🧠 Mnemonic saved to: %s\n", app.config.KeyStore.OutputDir)
+			}
 		}
 	}
 
@@ -1426,6 +1435,9 @@ func (app *Application) displayMultipleWalletResults(results []*wallet.Generatio
 		// Only show private key if not in quiet mode
 		if !app.config.CLI.QuietMode {
 			fmt.Printf("  Private Key: %s\n", result.Wallet.PrivateKey)
+			if result.Wallet.Mnemonic != "" {
+				fmt.Printf("  Mnemonic: %s\n", result.Wallet.Mnemonic)
+			}
 		}
 
 		fmt.Printf("  Attempts: %s\n", formatLargeNumber(result.Attempts))
@@ -1442,6 +1454,9 @@ func (app *Application) displayMultipleWalletResults(results []*wallet.Generatio
 				fmt.Printf("  ⚠️  Keystore: Failed to generate (%v)\n", err)
 			} else {
 				fmt.Printf("  🔐 Keystore: Saved\n")
+				if result.Wallet.Mnemonic != "" {
+					fmt.Printf("  🧠 Mnemonic: Saved\n")
+				}
 			}
 		}
 
@@ -1998,6 +2013,18 @@ func (app *Application) generateAndSaveKeystoreWithVerbose(w *wallet.Wallet, ver
 			return fmt.Errorf("keystore generation failed for address %s: %v", w.Address, err)
 		}
 		return fmt.Errorf("failed to save keystore files for address %s: %w", w.Address, err)
+	}
+
+	if w.Mnemonic != "" {
+		if err := keystoreService.SaveMnemonicFile(w.Address, w.Mnemonic); err != nil {
+			if ksErr, ok := err.(*crypto.KeyStoreError); ok {
+				if ksErr.UserMessage != "" {
+					return fmt.Errorf("mnemonic save failed: %s", ksErr.UserMessage)
+				}
+				return fmt.Errorf("mnemonic save failed for address %s: %v", w.Address, err)
+			}
+			return fmt.Errorf("failed to save mnemonic file for address %s: %w", w.Address, err)
+		}
 	}
 
 	return nil

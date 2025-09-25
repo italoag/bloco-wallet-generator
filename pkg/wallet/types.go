@@ -9,6 +9,7 @@ type Wallet struct {
 	Address    string    `json:"address"`
 	PublicKey  string    `json:"public_key"`
 	PrivateKey string    `json:"private_key"`
+	Mnemonic   string    `json:"mnemonic,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
@@ -26,6 +27,7 @@ type GenerationCriteria struct {
 	Prefix      string `json:"prefix"`
 	Suffix      string `json:"suffix"`
 	IsChecksum  bool   `json:"is_checksum"`
+	UseMnemonic bool   `json:"use_mnemonic,omitempty"`
 	MaxAttempts int64  `json:"max_attempts,omitempty"`
 }
 
