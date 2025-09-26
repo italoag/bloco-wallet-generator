@@ -1,10 +1,10 @@
-# Bloco Wallet Generator
+# Bloco Vanity Generator
 
-A high-performance CLI tool for generating Ethereum bloco wallets with custom prefixes and suffixes, built in Go with automatic wallet logging and EIP-55 checksum support.
+A high-performance CLI tool for generating Vanity Ethereum address with custom prefixes and suffixes, built in Go with automatic wallet logging and EIP-55 checksum support.
 
 ## Features
 
-- ✨ Generate Ethereum wallets with custom prefix and/or suffix
+- ✨ Generate Vanity Ethereum addresses with custom prefix and/or suffix
 - 🔐 Support for checksum validation (EIP-55)
 - 📊 Real-time progress tracking with statistics
 - 📈 Detailed difficulty analysis and time estimates  
