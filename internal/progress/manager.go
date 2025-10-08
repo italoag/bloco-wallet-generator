@@ -244,7 +244,7 @@ func (pm *ProgressManager) displayProgress() {
 
 	// Add multi-thread information
 	if pm.aggregatedStats.ActiveWorkers > 1 {
-		fmt.Printf(" | 🧵 %d threads", pm.aggregatedStats.ActiveWorkers)
+		fmt.Printf(" | %d threads", pm.aggregatedStats.ActiveWorkers)
 	}
 }
 

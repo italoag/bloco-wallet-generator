@@ -201,7 +201,7 @@ func (m BenchmarkModel) renderProgressView() string {
 	b.WriteString("\n")
 
 	// Header
-	header := m.styleManager.FormatHeader("🏃 Benchmark Running")
+	header := m.styleManager.FormatHeader("Benchmark Running")
 	b.WriteString(header + "\n\n")
 
 	// Progress bar
@@ -240,7 +240,7 @@ func (m BenchmarkModel) renderProgressView() string {
 	var metrics string
 	if m.results != nil {
 		metrics = fmt.Sprintf(
-			"📊 Current Performance:\n"+
+			"Current Performance:\n"+
 				"   Attempts: %s\n"+
 				"   Current Speed: %s addr/s\n"+
 				"   Average Speed: %s addr/s\n"+
@@ -261,7 +261,7 @@ func (m BenchmarkModel) renderProgressView() string {
 		)
 	} else {
 		metrics = fmt.Sprintf(
-			"📊 Current Performance:\n"+
+			"Current Performance:\n"+
 				"   Attempts: %s\n"+
 				"   Speed: %s addr/s\n"+
 				"   Pattern: %s\n"+
@@ -288,7 +288,7 @@ func (m BenchmarkModel) renderProgressView() string {
 func (m BenchmarkModel) renderTransitionView() string {
 	var b strings.Builder
 
-	header := m.styleManager.FormatHeader("✅ Benchmark Complete - Loading Results...")
+	header := m.styleManager.FormatHeader("Benchmark Complete - Loading Results...")
 	b.WriteString(header + "\n\n")
 
 	// Simple loading animation
@@ -308,7 +308,7 @@ func (m BenchmarkModel) renderResultsView() string {
 	b.WriteString("\n")
 
 	// Header
-	header := m.styleManager.FormatHeader("📈 Benchmark Results")
+	header := m.styleManager.FormatHeader("Benchmark Results")
 	b.WriteString(header + "\n\n")
 
 	// Results summary
@@ -319,7 +319,7 @@ func (m BenchmarkModel) renderResultsView() string {
 			Padding(1, 2)
 
 		summary := fmt.Sprintf(
-			"🎯 Summary:\n"+
+			"Summary:\n"+
 				"   Total Duration: %s\n"+
 				"   Average Speed: %.0f addr/s\n"+
 				"   Thread Efficiency: %.1f%%\n"+
