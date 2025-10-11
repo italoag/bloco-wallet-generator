@@ -337,7 +337,7 @@ func (app *Application) generateSingleWalletTUI(
 		if app.config.KeyStore.Enabled {
 			if err := app.generateAndSaveKeystoreWithVerbose(genResult.Wallet, false); err != nil {
 				if !app.config.CLI.QuietMode {
-					fmt.Printf("⚠️  Warning: Failed to generate keystore: %v\n", err)
+					fmt.Printf("Warning: Failed to generate keystore: %v\n", err)
 				}
 			}
 		}
@@ -387,9 +387,9 @@ func (app *Application) generateSingleWalletText(
 	showProgress bool,
 ) error {
 	if showProgress && !app.config.CLI.QuietMode {
-		fmt.Printf("🎯 Generating wallet with pattern: %s\n", criteria.GetPattern())
-		fmt.Printf("📊 Difficulty: %s\n", formatLargeNumber(int64(calculateDifficulty(criteria))))
-		fmt.Printf("🧵 Using %d worker threads\n\n", app.config.Worker.ThreadCount)
+		fmt.Printf("Generating wallet with pattern: %s\n", criteria.GetPattern())
+		fmt.Printf("Difficulty: %s\n", formatLargeNumber(int64(calculateDifficulty(criteria))))
+		fmt.Printf("Using %d worker threads\n\n", app.config.Worker.ThreadCount)
 	}
 
 	// Completely disable progress manager to avoid deadlocks
@@ -632,7 +632,7 @@ func (app *Application) generateMultipleWalletsTUI(
 			if app.config.KeyStore.Enabled {
 				if err := app.generateAndSaveKeystoreWithVerbose(result.Wallet, false); err != nil {
 					if !app.config.CLI.QuietMode {
-						fmt.Printf("⚠️  Warning: Failed to generate keystore for wallet %d: %v\n", i+1, err)
+						fmt.Printf("Warning: Failed to generate keystore for wallet %d: %v\n", i+1, err)
 					}
 				}
 			}
@@ -687,9 +687,9 @@ func (app *Application) generateMultipleWalletsText(
 	showProgress bool,
 ) error {
 	if showProgress && !app.config.CLI.QuietMode {
-		fmt.Printf("🎯 Generating %d wallets with pattern: %s\n", count, criteria.GetPattern())
-		fmt.Printf("📊 Difficulty: %s\n", formatLargeNumber(int64(calculateDifficulty(criteria))))
-		fmt.Printf("🧵 Using %d worker threads\n\n", app.config.Worker.ThreadCount)
+		fmt.Printf("Generating %d wallets with pattern: %s\n", count, criteria.GetPattern())
+		fmt.Printf("Difficulty: %s\n", formatLargeNumber(int64(calculateDifficulty(criteria))))
+		fmt.Printf("Using %d worker threads\n\n", app.config.Worker.ThreadCount)
 	}
 
 	results := make([]*wallet.GenerationResult, 0, count)
@@ -704,7 +704,7 @@ func (app *Application) generateMultipleWalletsText(
 		result, err := workerPool.GenerateWalletWithContext(ctx, criteria)
 		if err != nil {
 			if showProgress && !app.config.CLI.QuietMode {
-				fmt.Printf("\n❌ Error generating wallet %d: %v\n", i+1, err)
+				fmt.Printf("\nError generating wallet %d: %v\n", i+1, err)
 			}
 
 			// Continue with next wallet instead of failing completely
@@ -719,7 +719,7 @@ func (app *Application) generateMultipleWalletsText(
 
 		// Show individual wallet result if verbose
 		if app.config.CLI.VerboseOutput {
-			fmt.Printf("\n✅ Wallet %d: 0x%s (attempts: %s)\n",
+			fmt.Printf("\nWallet %d: 0x%s (attempts: %s)\n",
 				i+1, result.Wallet.Address, formatLargeNumber(result.Attempts))
 		}
 	}
@@ -809,7 +809,7 @@ func (app *Application) showStatsTUI(criteria wallet.GenerationCriteria, difficu
 // showStatsText displays statistics in text mode (fallback)
 func (app *Application) showStatsText(criteria wallet.GenerationCriteria, difficulty float64, probability50 int64) error {
 	// Display statistics
-	fmt.Printf("📊 Pattern Analysis: %s\n", criteria.GetPattern())
+	fmt.Printf("Pattern Analysis: %s\n", criteria.GetPattern())
 	fmt.Printf("═══════════════════════════════════════\n\n")
 
 	fmt.Printf("Pattern Length: %d characters\n", criteria.GetPatternLength())
@@ -818,7 +818,7 @@ func (app *Application) showStatsText(criteria wallet.GenerationCriteria, diffic
 	fmt.Printf("50%% Probability: %s attempts\n", formatLargeNumber(probability50))
 
 	// Show time estimates at different speeds
-	fmt.Printf("\n⏱️  Time Estimates:\n")
+	fmt.Printf("\nTime Estimates:\n")
 	speeds := []float64{1000, 10000, 50000, 100000}
 	for _, speed := range speeds {
 		if probability50 > 0 {
@@ -920,7 +920,7 @@ func (app *Application) runBenchmarkTUI(ctx context.Context, attempts int, durat
 
 // runBenchmarkText runs benchmark in text mode
 func (app *Application) runBenchmarkText(ctx context.Context, attempts int, duration time.Duration, detailed bool) error {
-	fmt.Printf("🚀 Running benchmark...\n")
+	fmt.Printf("Running benchmark...\n")
 	fmt.Printf("Attempts: %s\n", formatLargeNumber(int64(attempts)))
 	fmt.Printf("Duration: %v\n", duration)
 	fmt.Printf("Threads: %d\n\n", app.config.Worker.ThreadCount)
@@ -1276,7 +1276,7 @@ func (app *Application) displayCompatibilityReport(report *kdf.CompatibilityRepo
 		return
 	}
 
-	fmt.Printf("\n🔍 KDF Compatibility Analysis\n")
+	fmt.Printf("\nKDF Compatibility Analysis\n")
 	fmt.Printf("═══════════════════════════════════════\n")
 
 	// Basic information
@@ -1287,14 +1287,14 @@ func (app *Application) displayCompatibilityReport(report *kdf.CompatibilityRepo
 	fmt.Printf("\n")
 
 	// Security level with color coding
-	securityIcon := app.getSecurityLevelIcon(report.SecurityLevel)
-	fmt.Printf("Security Level: %s %s\n", securityIcon, report.SecurityLevel)
+	securityLabel := app.getSecurityLevelLabel(report.SecurityLevel)
+	fmt.Printf("Security Level: %s (%s)\n", securityLabel, report.SecurityLevel)
 
 	// Compatibility status
 	if report.Compatible {
-		fmt.Printf("Status: ✅ Compatible\n")
+		fmt.Printf("Status: Compatible\n")
 	} else {
-		fmt.Printf("Status: ❌ Incompatible\n")
+		fmt.Printf("Status: Incompatible\n")
 	}
 
 	// Display parameters if verbose
@@ -1307,7 +1307,7 @@ func (app *Application) displayCompatibilityReport(report *kdf.CompatibilityRepo
 
 	// Display issues
 	if len(report.Issues) > 0 {
-		fmt.Printf("\n❌ Issues:\n")
+		fmt.Printf("\nIssues:\n")
 		for _, issue := range report.Issues {
 			fmt.Printf("  • %s\n", issue)
 		}
@@ -1315,7 +1315,7 @@ func (app *Application) displayCompatibilityReport(report *kdf.CompatibilityRepo
 
 	// Display warnings
 	if len(report.Warnings) > 0 {
-		fmt.Printf("\n⚠️  Warnings:\n")
+		fmt.Printf("\nWarnings:\n")
 		for _, warning := range report.Warnings {
 			fmt.Printf("  • %s\n", warning)
 		}
@@ -1323,7 +1323,7 @@ func (app *Application) displayCompatibilityReport(report *kdf.CompatibilityRepo
 
 	// Display suggestions
 	if len(report.Suggestions) > 0 {
-		fmt.Printf("\n💡 Suggestions:\n")
+		fmt.Printf("\nSuggestions:\n")
 		for _, suggestion := range report.Suggestions {
 			fmt.Printf("  • %s\n", suggestion)
 		}
@@ -1332,19 +1332,19 @@ func (app *Application) displayCompatibilityReport(report *kdf.CompatibilityRepo
 	fmt.Printf("\n")
 }
 
-// getSecurityLevelIcon returns an appropriate icon for the security level
-func (app *Application) getSecurityLevelIcon(level kdf.SecurityLevel) string {
+// getSecurityLevelLabel returns a descriptive label for the security level
+func (app *Application) getSecurityLevelLabel(level kdf.SecurityLevel) string {
 	switch level {
 	case kdf.SecurityLevelLow:
-		return "🔴"
+		return "Low"
 	case kdf.SecurityLevelMedium:
-		return "🟡"
+		return "Medium"
 	case kdf.SecurityLevelHigh:
-		return "🟢"
+		return "High"
 	case kdf.SecurityLevelVeryHigh:
-		return "🔵"
+		return "Very High"
 	default:
-		return "⚪"
+		return "Unknown"
 	}
 }
 
@@ -1391,7 +1391,7 @@ func formatBool(b bool) string {
 
 // Placeholder implementations for display functions
 func (app *Application) displayWalletResult(result *wallet.GenerationResult, showProgress bool) error {
-	fmt.Printf("✅ Wallet generated successfully!\n")
+	fmt.Printf("Wallet generated successfully!\n")
 	fmt.Printf("Address: %s\n", result.Wallet.Address)
 	fmt.Printf("Private Key: %s\n", result.Wallet.PrivateKey)
 	if result.Wallet.Mnemonic != "" {
@@ -1403,11 +1403,11 @@ func (app *Application) displayWalletResult(result *wallet.GenerationResult, sho
 	// Generate keystore if enabled
 	if app.config.KeyStore.Enabled {
 		if err := app.generateAndSaveKeystore(result.Wallet); err != nil {
-			fmt.Printf("⚠️  Warning: Failed to generate keystore: %v\n", err)
+			fmt.Printf("Warning: Failed to generate keystore: %v\n", err)
 		} else {
-			fmt.Printf("🔐 Keystore saved to: %s\n", app.config.KeyStore.OutputDir)
+			fmt.Printf("Keystore saved to: %s\n", app.config.KeyStore.OutputDir)
 			if result.Wallet.Mnemonic != "" {
-				fmt.Printf("🧠 Mnemonic saved to: %s\n", app.config.KeyStore.OutputDir)
+				fmt.Printf("Mnemonic saved to: %s\n", app.config.KeyStore.OutputDir)
 			}
 		}
 	}
@@ -1417,14 +1417,14 @@ func (app *Application) displayWalletResult(result *wallet.GenerationResult, sho
 
 func (app *Application) displayMultipleWalletResults(results []*wallet.GenerationResult, totalAttempts int64, totalDuration time.Duration, showProgress bool) error {
 	if len(results) == 0 {
-		fmt.Printf("❌ No wallets were generated successfully\n")
+		fmt.Printf("No wallets were generated successfully\n")
 		return nil
 	}
 
-	fmt.Printf("✅ Generated %d wallets successfully!\n", len(results))
-	fmt.Printf("📊 Total attempts: %s\n", formatLargeNumber(totalAttempts))
-	fmt.Printf("⏱️  Total duration: %s\n", formatDuration(totalDuration))
-	fmt.Printf("⚡ Average speed: %.0f addr/s\n\n", float64(totalAttempts)/totalDuration.Seconds())
+	fmt.Printf("Generated %d wallets successfully!\n", len(results))
+	fmt.Printf("Total attempts: %s\n", formatLargeNumber(totalAttempts))
+	fmt.Printf("Total duration: %s\n", formatDuration(totalDuration))
+	fmt.Printf("Average speed: %.0f addr/s\n\n", float64(totalAttempts)/totalDuration.Seconds())
 
 	// Display individual wallets
 	var keystoreErrors []error
@@ -1451,11 +1451,11 @@ func (app *Application) displayMultipleWalletResults(results []*wallet.Generatio
 		if app.config.KeyStore.Enabled {
 			if err := app.generateAndSaveKeystore(result.Wallet); err != nil {
 				keystoreErrors = append(keystoreErrors, err)
-				fmt.Printf("  ⚠️  Keystore: Failed to generate (%v)\n", err)
+				fmt.Printf("  Keystore: Failed to generate (%v)\n", err)
 			} else {
-				fmt.Printf("  🔐 Keystore: Saved\n")
+				fmt.Printf("  Keystore: Saved\n")
 				if result.Wallet.Mnemonic != "" {
-					fmt.Printf("  🧠 Mnemonic: Saved\n")
+					fmt.Printf("  Mnemonic: Saved\n")
 				}
 			}
 		}
@@ -1467,10 +1467,10 @@ func (app *Application) displayMultipleWalletResults(results []*wallet.Generatio
 	if app.config.KeyStore.Enabled {
 		successCount := len(results) - len(keystoreErrors)
 		if successCount > 0 {
-			fmt.Printf("🔐 Keystores saved: %d/%d to %s\n", successCount, len(results), app.config.KeyStore.OutputDir)
+			fmt.Printf("Keystores saved: %d/%d to %s\n", successCount, len(results), app.config.KeyStore.OutputDir)
 		}
 		if len(keystoreErrors) > 0 {
-			fmt.Printf("⚠️  Keystore errors: %d/%d\n", len(keystoreErrors), len(results))
+			fmt.Printf("Keystore errors: %d/%d\n", len(keystoreErrors), len(results))
 		}
 	}
 
@@ -1491,7 +1491,7 @@ func (app *Application) displayMultipleWalletResults(results []*wallet.Generatio
 
 		avgAttempts := totalWalletAttempts / int64(len(results))
 
-		fmt.Printf("📈 Statistics Summary:\n")
+		fmt.Printf("Statistics Summary:\n")
 		fmt.Printf("  Average attempts per wallet: %s\n", formatLargeNumber(avgAttempts))
 		fmt.Printf("  Min attempts: %s\n", formatLargeNumber(minAttempts))
 		fmt.Printf("  Max attempts: %s\n", formatLargeNumber(maxAttempts))
@@ -1678,7 +1678,7 @@ benchmarkComplete:
 }
 
 func (app *Application) executeBenchmark(ctx context.Context, workerPool worker.WorkerPool, attempts int, duration time.Duration) (*wallet.BenchmarkResult, error) {
-	fmt.Printf("🚀 Starting benchmark...\n")
+	fmt.Printf("Starting benchmark...\n")
 
 	// Create a simple generation criteria for benchmarking
 	criteria := wallet.GenerationCriteria{
@@ -1722,7 +1722,7 @@ func (app *Application) executeBenchmark(ctx context.Context, workerPool worker.
 				speedSamples = append(speedSamples, speed)
 				durationSamples = append(durationSamples, time.Second)
 
-				fmt.Printf("\r📈 Sample %d: %.0f addr/s (total: %s attempts)",
+				fmt.Printf("\rSample %d: %.0f addr/s (total: %s attempts)",
 					sampleCount+1, speed, formatLargeNumber(currentAttempts))
 
 				lastAttempts = currentAttempts
@@ -1762,7 +1762,7 @@ benchmarkComplete:
 	finalStats := statsCollector.GetAggregatedStats()
 	totalAttempts = finalStats.TotalAttempts
 
-	fmt.Printf("\n✅ Benchmark completed!\n")
+	fmt.Printf("\nBenchmark completed!\n")
 
 	// Calculate statistics
 	var avgSpeed, minSpeed, maxSpeed float64
@@ -1804,7 +1804,7 @@ benchmarkComplete:
 }
 
 func (app *Application) displayBenchmarkResults(result *wallet.BenchmarkResult, detailed bool) error {
-	fmt.Printf("\n📈 Benchmark Results:\n")
+	fmt.Printf("\nBenchmark Results:\n")
 	fmt.Printf("═══════════════════════════════════════\n")
 
 	// Basic metrics
@@ -1818,7 +1818,7 @@ func (app *Application) displayBenchmarkResults(result *wallet.BenchmarkResult, 
 
 	// Thread performance
 	if result.ThreadCount > 1 {
-		fmt.Printf("\n🧵 Multi-Threading Performance:\n")
+		fmt.Printf("\nMulti-Threading Performance:\n")
 		fmt.Printf("Threads Used: %d\n", result.ThreadCount)
 		fmt.Printf("Thread Efficiency: %.1f%%\n", result.ScalabilityEfficiency*100)
 		fmt.Printf("Thread Balance: %.1f%%\n", result.ThreadBalanceScore*100)
@@ -1836,7 +1836,7 @@ func (app *Application) displayBenchmarkResults(result *wallet.BenchmarkResult, 
 
 	// Detailed statistics
 	if detailed && len(result.SpeedSamples) > 0 {
-		fmt.Printf("\n📊 Detailed Performance Samples:\n")
+		fmt.Printf("\nDetailed Performance Samples:\n")
 
 		// Show first few and last few samples
 		samplesToShow := 5
@@ -1871,7 +1871,7 @@ func (app *Application) displayBenchmarkResults(result *wallet.BenchmarkResult, 
 			variance := (sumSquares - sum*mean) / float64(len(result.SpeedSamples)-1)
 			stdDev := math.Sqrt(variance)
 
-			fmt.Printf("\n📐 Speed Statistics:\n")
+			fmt.Printf("\nSpeed Statistics:\n")
 			fmt.Printf("  Mean: %.0f addr/s\n", mean)
 			fmt.Printf("  Std Dev: %.0f addr/s\n", stdDev)
 			fmt.Printf("  Coefficient of Variation: %.1f%%\n", stdDev/mean*100)
@@ -1879,33 +1879,33 @@ func (app *Application) displayBenchmarkResults(result *wallet.BenchmarkResult, 
 	}
 
 	// Performance recommendations
-	fmt.Printf("\n💡 Performance Analysis:\n")
+	fmt.Printf("\nPerformance Analysis:\n")
 
 	if result.ThreadCount > 1 {
 		if result.ScalabilityEfficiency > 0.8 {
-			fmt.Printf("  ✅ Excellent multi-threading efficiency\n")
+			fmt.Printf("  Excellent multi-threading efficiency\n")
 		} else if result.ScalabilityEfficiency > 0.6 {
-			fmt.Printf("  ✓ Good multi-threading efficiency\n")
+			fmt.Printf("  Good multi-threading efficiency\n")
 		} else {
-			fmt.Printf("  ⚠️ Multi-threading efficiency could be improved\n")
+			fmt.Printf("  Multi-threading efficiency could be improved\n")
 		}
 
 		if result.ThreadBalanceScore > 0.8 {
-			fmt.Printf("  ✅ Well-balanced thread utilization\n")
+			fmt.Printf("  Well-balanced thread utilization\n")
 		} else {
-			fmt.Printf("  ⚠️ Uneven thread utilization detected\n")
+			fmt.Printf("  Uneven thread utilization detected\n")
 		}
 	}
 
 	// Speed assessment
 	if result.AverageSpeed > 100000 {
-		fmt.Printf("  🚀 Excellent performance (>100k addr/s)\n")
+		fmt.Printf("  Excellent performance (>100k addr/s)\n")
 	} else if result.AverageSpeed > 50000 {
-		fmt.Printf("  ✅ Good performance (>50k addr/s)\n")
+		fmt.Printf("  Good performance (>50k addr/s)\n")
 	} else if result.AverageSpeed > 10000 {
-		fmt.Printf("  ✓ Moderate performance (>10k addr/s)\n")
+		fmt.Printf("  Moderate performance (>10k addr/s)\n")
 	} else {
-		fmt.Printf("  ⚠️ Performance could be improved (<10k addr/s)\n")
+		fmt.Printf("  Performance could be improved (<10k addr/s)\n")
 	}
 
 	return nil
@@ -1996,7 +1996,7 @@ func (app *Application) generateAndSaveKeystoreWithVerbose(w *wallet.Wallet, ver
 		report, err := analyzer.AnalyzeKeystore(cryptoParamsComplete)
 		if err != nil {
 			if verbose {
-				fmt.Printf("⚠️  Warning: Failed to analyze KDF compatibility: %v\n", err)
+				fmt.Printf("Warning: Failed to analyze KDF compatibility: %v\n", err)
 			}
 		} else {
 			app.displayCompatibilityReport(report, verbose)

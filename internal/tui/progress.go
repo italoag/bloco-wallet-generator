@@ -492,7 +492,7 @@ func (m *ProgressModel) updateResultsTable() {
 			// Error row
 			rows = append(rows, table.Row{
 				fmt.Sprintf("%d", result.Index),
-				"❌ Error occurred",
+				"Error occurred",
 				result.Error,
 				"-",
 				m.formatDuration(result.Time),

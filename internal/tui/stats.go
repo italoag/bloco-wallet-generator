@@ -160,7 +160,7 @@ func (m StatsModel) View() string {
 	content.WriteString(renderBlocoLogo(pad))
 	content.WriteString("\n")
 	content.WriteString(pad)
-	content.WriteString(m.styleManager.FormatTitle("📊 Bloco Address Difficulty Analysis"))
+	content.WriteString(m.styleManager.FormatTitle("Bloco Address Difficulty Analysis"))
 	content.WriteString("\n\n")
 
 	// Pattern overview section
@@ -169,7 +169,7 @@ func (m StatsModel) View() string {
 
 	// Main statistics table
 	content.WriteString(pad)
-	content.WriteString(m.styleManager.FormatSubtitle("📈 Detailed Statistics"))
+	content.WriteString(m.styleManager.FormatSubtitle("Detailed Statistics"))
 	content.WriteString("\n")
 	content.WriteString(m.table.View())
 	content.WriteString("\n")
@@ -228,7 +228,7 @@ func (m StatsModel) renderTimeEstimates() string {
 	var content strings.Builder
 
 	content.WriteString(pad)
-	content.WriteString(m.styleManager.FormatSubtitle("⏱️ Time Estimates (at different speeds)"))
+	content.WriteString(m.styleManager.FormatSubtitle("Time Estimates (at different speeds)"))
 	content.WriteString("\n")
 
 	// Create time estimates table
@@ -297,7 +297,7 @@ func (m StatsModel) renderProbabilityExamples() string {
 	var content strings.Builder
 
 	content.WriteString(pad)
-	content.WriteString(m.styleManager.FormatSubtitle("🎲 Probability Examples"))
+	content.WriteString(m.styleManager.FormatSubtitle("Probability Examples"))
 	content.WriteString("\n")
 
 	// Create probability table
@@ -379,7 +379,7 @@ func (m StatsModel) renderRecommendations() string {
 	var content strings.Builder
 
 	content.WriteString(pad)
-	content.WriteString(m.styleManager.FormatSubtitle("💡 Recommendations"))
+	content.WriteString(m.styleManager.FormatSubtitle("Recommendations"))
 	content.WriteString("\n")
 
 	patternLength := len(m.stats.Pattern)
@@ -387,16 +387,16 @@ func (m StatsModel) renderRecommendations() string {
 	// Difficulty assessment
 	var difficultyLevel, recommendation string
 	if patternLength <= 3 {
-		difficultyLevel = m.styleManager.FormatSuccess("✅ Easy")
+		difficultyLevel = m.styleManager.FormatSuccess("Easy")
 		recommendation = "Should generate quickly, suitable for testing"
 	} else if patternLength <= 5 {
-		difficultyLevel = m.styleManager.FormatWarning("⚠️ Moderate")
+		difficultyLevel = m.styleManager.FormatWarning("Moderate")
 		recommendation = "May take some time, reasonable for production use"
 	} else if patternLength <= 7 {
-		difficultyLevel = m.styleManager.FormatError("🔥 Hard")
+		difficultyLevel = m.styleManager.FormatError("Hard")
 		recommendation = "Will take considerable time, plan accordingly"
 	} else {
-		difficultyLevel = m.styleManager.FormatError("💀 Extremely Hard")
+		difficultyLevel = m.styleManager.FormatError("Extremely Hard")
 		recommendation = "May take days/weeks/years, use with extreme caution"
 	}
 

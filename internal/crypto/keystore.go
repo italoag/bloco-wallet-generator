@@ -1108,21 +1108,21 @@ type DefaultProgressLogger struct {
 
 func (l *DefaultProgressLogger) LogInfo(message string) {
 	if l.VerboseMode {
-		fmt.Printf("ℹ️  %s\n", message)
+		fmt.Printf("INFO: %s\n", message)
 	}
 }
 
 func (l *DefaultProgressLogger) LogWarning(message string) {
-	fmt.Printf("⚠️  %s\n", message)
+	fmt.Printf("WARNING: %s\n", message)
 }
 
 func (l *DefaultProgressLogger) LogError(message string) {
-	fmt.Printf("❌ %s\n", message)
+	fmt.Printf("ERROR: %s\n", message)
 }
 
 func (l *DefaultProgressLogger) LogDebug(message string) {
 	if l.VerboseMode {
-		fmt.Printf("🔍 %s\n", message)
+		fmt.Printf("%s\n", message)
 	}
 }
 

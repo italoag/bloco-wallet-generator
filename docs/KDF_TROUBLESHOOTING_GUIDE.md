@@ -498,11 +498,11 @@ Memory = 128 * n * r * p bytes
 ```
 Client Compatibility Report
 ===========================
-Geth:     ✅ Compatible
-Besu:     ✅ Compatible  
-Anvil:    ✅ Compatible
-Reth:     ✅ Compatible
-Firefly:  ⚠️  Partial (see recommendations)
+Geth:     Compatible
+Besu:     Compatible
+Anvil:    Compatible
+Reth:     Compatible
+Firefly:  Partial (see recommendations)
 
 Recommendations:
 - Consider using PBKDF2 for better Firefly compatibility

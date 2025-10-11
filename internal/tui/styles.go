@@ -263,13 +263,13 @@ func (sm *StyleManager) CreateProgressBar(content string) string {
 func (sm *StyleManager) CreateStatusIndicator(status, text string) string {
 	switch status {
 	case "success":
-		return sm.successStyle.Render("✅ " + text)
+		return sm.successStyle.Render(text)
 	case "error":
-		return sm.errorStyle.Render("❌ " + text)
+		return sm.errorStyle.Render(text)
 	case "warning":
-		return sm.warningStyle.Render("⚠️ " + text)
+		return sm.warningStyle.Render(text)
 	case "info":
-		return sm.infoStyle.Render("ℹ️ " + text)
+		return sm.infoStyle.Render(text)
 	default:
 		return text
 	}
