@@ -59,7 +59,7 @@ func setupGracefulShutdown() (context.Context, context.CancelFunc) {
 
 	go func() {
 		<-sigChan
-		fmt.Fprintf(os.Stderr, "\n🛑 Received interrupt signal, shutting down gracefully...\n")
+		fmt.Fprintf(os.Stderr, "\nReceived interrupt signal, shutting down gracefully...\n")
 		cancel()
 	}()
 

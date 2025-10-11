@@ -120,7 +120,7 @@ The Universal KDF system in bloco-eth supports multiple KDF algorithms with comp
 }'
 ```
 
-**⚠️ Warning**: Only use for development/testing environments.
+**Warning**: Only use for development/testing environments.
 
 **Security Analysis:**
 - **Memory Usage**: ~2 MB
@@ -139,7 +139,7 @@ The Universal KDF system in bloco-eth supports multiple KDF algorithms with comp
 }'
 ```
 
-**⚠️ Warning**: Only use for development/testing environments.
+**Warning**: Only use for development/testing environments.
 
 ## Client-Specific Configurations
 

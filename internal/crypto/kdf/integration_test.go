@@ -307,7 +307,7 @@ func TestRequirementsCoverage(t *testing.T) {
 			t.Error("Report missing security level")
 		}
 
-		t.Logf("✓ Requirement 4.1: Compatibility report generated with all required fields")
+		t.Logf("Requirement 4.1: Compatibility report generated with all required fields")
 	})
 
 	// Requirement 4.2: Security level assessment
@@ -345,7 +345,7 @@ func TestRequirementsCoverage(t *testing.T) {
 			}
 		}
 
-		t.Logf("✓ Requirement 4.2: Security level assessment working correctly")
+		t.Logf("Requirement 4.2: Security level assessment working correctly")
 	})
 
 	// Requirement 4.3: Detailed compatibility reporting
@@ -374,7 +374,7 @@ func TestRequirementsCoverage(t *testing.T) {
 			t.Error("Expected suggestions for invalid parameters")
 		}
 
-		t.Logf("✓ Requirement 4.3: Detailed reporting with %d issues and %d suggestions",
+		t.Logf("Requirement 4.3: Detailed reporting with %d issues and %d suggestions",
 			len(report.Issues), len(report.Suggestions))
 	})
 }

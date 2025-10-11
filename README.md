@@ -4,24 +4,24 @@ A high-performance CLI tool for generating Vanity Ethereum address with custom p
 
 ## Features
 
-- ✨ Generate Vanity Ethereum addresses with custom prefix and/or suffix
-- 🔐 Support for checksum validation (EIP-55)
-- 📊 Real-time progress tracking with statistics
-- 📈 Detailed difficulty analysis and time estimates  
-- ⚡ High-performance implementation with multi-threading support
-- 🚀 Parallel processing using all CPU cores for maximum performance
-- 🎯 Multiple wallet generation in a single run
-- 🧠 Vanity generation using BIP-39 mnemonic phrases or raw private keys
-- 🏁 Performance benchmarking tools with multi-threading support
-- 📐 Probability calculations and success predictions
-- 🔧 **IMPLEMENTED**: Configurable thread count with auto-detection
-- 📁 **NEW**: Automatic wallet logging to timestamped files
-- 🔍 **NEW**: Complete EIP-55 checksum implementation
-- ⚡ **NEW**: Real-time statistics collection from workers
-- 📊 **NEW**: Streamlined Pool architecture for better performance
-- 🔑 **NEW**: Automatic KeyStore V3 file generation for easy import
-- 🛡️ **NEW**: Secure password generation with complexity validation
-- 📦 **NEW**: Compatible with MetaMask, geth, and other Ethereum clients
+- Generate Vanity Ethereum addresses with custom prefix and/or suffix
+- Support for checksum validation (EIP-55)
+- Real-time progress tracking with statistics
+- Detailed difficulty analysis and time estimates
+- High-performance implementation with multi-threading support
+- Parallel processing using all CPU cores for maximum performance
+- Multiple wallet generation in a single run
+- Vanity generation using BIP-39 mnemonic phrases or raw private keys
+- Performance benchmarking tools with multi-threading support
+- Probability calculations and success predictions
+- **IMPLEMENTED**: Configurable thread count with auto-detection
+- **NEW**: Automatic wallet logging to timestamped files
+- **NEW**: Complete EIP-55 checksum implementation
+- **NEW**: Real-time statistics collection from workers
+- **NEW**: Streamlined Pool architecture for better performance
+- **NEW**: Automatic KeyStore V3 file generation for easy import
+- **NEW**: Secure password generation with complexity validation
+- **NEW**: Compatible with MetaMask, geth, and other Ethereum clients
 
 ## Installation
 
@@ -64,7 +64,7 @@ make build-all
 
 ## Security Notice
 
-⚠️ **IMPORTANT SECURITY UPDATE**: This version implements secure logging that **NEVER** records sensitive cryptographic data. Previous versions may have logged private keys and other sensitive information. See the [Migration Guide](#migration-from-insecure-logging) below.
+**IMPORTANT SECURITY UPDATE**: This version implements secure logging that **NEVER** records sensitive cryptographic data. Previous versions may have logged private keys and other sensitive information. See the [Migration Guide](#migration-from-insecure-logging) below.
 
 ## Key Features
 
@@ -281,11 +281,11 @@ The Universal KDF system provides advanced key derivation with comprehensive com
 
 The Universal KDF system ensures compatibility with major Ethereum clients:
 
-- ✅ **Geth (Go Ethereum)**: Full compatibility with standard parameters
-- ✅ **Besu**: Excellent support for all KDF configurations
-- ✅ **Anvil (Foundry)**: Supports both scrypt and PBKDF2
-- ✅ **Reth**: Full KeyStore V3 compliance
-- ✅ **Hyperledger Firefly**: Optimized PBKDF2 configurations available
+- **Geth (Go Ethereum)**: Full compatibility with standard parameters
+- **Besu**: Excellent support for all KDF configurations
+- **Anvil (Foundry)**: Supports both scrypt and PBKDF2
+- **Reth**: Full KeyStore V3 compliance
+- **Hyperledger Firefly**: Optimized PBKDF2 configurations available
 
 #### Compatibility Analysis Example
 
@@ -295,22 +295,22 @@ The Universal KDF system ensures compatibility with major Ethereum clients:
 
 Output:
 ```
-🔐 KDF Compatibility Analysis
+KDF Compatibility Analysis
 ═══════════════════════════════════════════════════════════════
-🎯 KDF Type: scrypt
-📊 Parameters: n=262144, r=8, p=1, dklen=32
-🛡️  Security Level: High
-💾 Memory Usage: 128 MB
-⏱️  Generation Time: ~2-5 seconds
+KDF Type: scrypt
+Parameters: n=262144, r=8, p=1, dklen=32
+Security Level: High
+Memory Usage: 128 MB
+Generation Time: ~2-5 seconds
 
-🔍 Client Compatibility:
-   ✅ Geth (Go Ethereum): Compatible
-   ✅ Besu: Compatible
-   ✅ Anvil (Foundry): Compatible
-   ✅ Reth: Compatible
-   ✅ Hyperledger Firefly: Compatible
+Client Compatibility:
+   Geth (Go Ethereum): Compatible
+   Besu: Compatible
+   Anvil (Foundry): Compatible
+   Reth: Compatible
+   Hyperledger Firefly: Compatible
 
-💡 Recommendations:
+Recommendations:
    • Current configuration provides excellent security
    • Compatible with all major Ethereum clients
    • Consider using 'production' preset for consistency
@@ -392,7 +392,7 @@ The application now supports graceful interruption:
 # 4. Exit with proper status code
 ```
 
-⚠️ **Important**: Never use prefixes longer than 4 characters for testing signal handling, as they may take hours or days to complete!
+**Important**: Never use prefixes longer than 4 characters for testing signal handling, as they may take hours or days to complete!
 
 ### Generate a Simple Bloco Wallet
 
@@ -402,9 +402,9 @@ The application now supports graceful interruption:
 
 Output:
 ```
-🎯 Bloco Wallet Generator
+Bloco Wallet Generator
 ═══════════════════════════════════════════════════════════════
-🔧 Configuration:
+Configuration:
    • Pattern: cafe****************************beef
    • Checksum: false
    • Count: 1 wallets
@@ -413,39 +413,39 @@ Output:
    • Auto-logging: wallets-20241201.log
    • KeyStore: ./keystores (scrypt)
 
-📊 Difficulty Analysis:
+Difficulty Analysis:
    • Difficulty: 16 777 216
    • 50% probability: 11 629 080 attempts
    • Estimated time (50% chance): ~6m 27s
 ═══════════════════════════════════════════════════════════════
 
-🔄 Generating wallet 1/1...
+Generating wallet 1/1...
 
-🎯 Generating bloco wallet with pattern: cafe****************************beef
-📊 Real-time stats: 2 845 672 attempts | 48,203 addr/s | Workers: 8
+Generating bloco wallet with pattern: cafe****************************beef
+Real-time stats: 2 845 672 attempts | 48,203 addr/s | Workers: 8
 
-✅ Success! Found matching address in 2 845 672 attempts
-⚡ Final speed: 52,184 addr/s
-📁 Wallet logged to: wallets-20241201.log
-🔐 Keystore saved to: ./keystores
+Success! Found matching address in 2 845 672 attempts
+Final speed: 52,184 addr/s
+Wallet logged to: wallets-20241201.log
+Keystore saved to: ./keystores
 
-✅ Wallet 1 generated successfully!
-   📍 Address:     0xCafe1234567890ABCDef1234567890ABCDefbeef
-   🔑 Public Key:  04a1b2c3d4e5f6789012345678901234567890abcdef...
-   🔑 Private Key: a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
-   🎲 Attempts:    2 845 672
-   ⏱️  Time:        59.1s
-   ⚡ Speed:       48,203 addr/s
-   🔐 KeyStore:    ./keystores/0xcafe1234567890abcdef1234567890abcdefbeef.json
+Wallet 1 generated successfully!
+   Address:     0xCafe1234567890ABCDef1234567890ABCDefbeef
+   Public Key:  04a1b2c3d4e5f6789012345678901234567890abcdef...
+   Private Key: a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
+   Attempts:    2 845 672
+   Time:        59.1s
+   Speed:       48,203 addr/s
+   KeyStore:    ./keystores/0xcafe1234567890abcdef1234567890abcdefbeef.json
 
-🏁 Generation Summary
+Generation Summary
 ═══════════════════════════════════════════════════════════════
-✅ Successful wallets: 1/1
-🎲 Total attempts: 2 845 672
-⏱️  Total time: 59.1s
-⚡ Overall speed: 48,203 addr/s
-📁 All wallets logged to: wallets-20241201.log
-🔐 KeyStore files saved to: ./keystores
+Successful wallets: 1/1
+Total attempts: 2 845 672
+Total time: 59.1s
+Overall speed: 48,203 addr/s
+All wallets logged to: wallets-20241201.log
+KeyStore files saved to: ./keystores
 ═══════════════════════════════════════════════════════════════
 ```
 
@@ -545,7 +545,7 @@ The secure logging system provides comprehensive operational logging without exp
 
 #### What Gets Logged (Safe Data Only)
 
-✅ **Logged Information:**
+**Logged Information:**
 - Wallet addresses (public Ethereum addresses)
 - Generation attempts and duration
 - Thread IDs and worker statistics
@@ -554,7 +554,7 @@ The secure logging system provides comprehensive operational logging without exp
 - Operation start/completion events
 - Configuration parameters (non-sensitive)
 
-❌ **Never Logged:**
+**Never Logged:**
 - Private keys
 - Public keys
 - Cryptographic seeds or entropy
@@ -589,7 +589,7 @@ timestamp=2024-01-15T10:30:22Z level=INFO msg="Wallet generated" address=0xabc12
 
 ### Migration from Insecure Logging
 
-⚠️ **CRITICAL SECURITY NOTICE**: Previous versions of this tool may have logged sensitive information including private keys. Follow these steps to secure your system:
+**CRITICAL SECURITY NOTICE**: Previous versions of this tool may have logged sensitive information including private keys. Follow these steps to secure your system:
 
 #### 1. Identify Old Log Files
 
@@ -642,31 +642,31 @@ grep -i "private\|public\|key\|0x[a-fA-F0-9]{64}" ./test-secure.log
 
 Output:
 ```
-📊 Bloco Address Difficulty Analysis
+Bloco Address Difficulty Analysis
 ═══════════════════════════════════════════════════════════════
-🎯 Pattern: deadbeef********************************
-🔧 Checksum: false
-📏 Pattern length: 8 characters
+Pattern: deadbeef********************************
+Checksum: false
+Pattern length: 8 characters
 
-📈 Difficulty Metrics:
+Difficulty Metrics:
    • Base difficulty: 4 294 967 296
    • Total difficulty: 4 294 967 296
    • 50% probability: 2 977 044 471 attempts
 
-⏱️  Time Estimates (at different speeds):
+Time Estimates (at different speeds):
    • 1 000 addr/s: 34d 9h 37m 24.5s
    • 10 000 addr/s: 3d 10h 37m 44.7s
    • 50 000 addr/s: 16h 32m 32.9s
    • 100 000 addr/s: 8h 16m 16.4s
 
-🎲 Probability Examples:
+Probability Examples:
    • After 1 000 attempts: 0.0002%
    • After 10 000 attempts: 0.0023%
    • After 100 000 attempts: 0.0233%
    • After 1 000 000 attempts: 0.2326%
 
-💡 Recommendations:
-   • 💀 Extremely Hard - May take days/weeks/years
+Recommendations:
+   • Extremely Hard - May take days/weeks/years
 ═══════════════════════════════════════════════════════════════
 ```
 
@@ -709,28 +709,28 @@ Shows comprehensive examples and usage patterns:
 
 Output:
 ```
-🚀 Starting benchmark with pattern 'abc' (checksum: false)
-📈 Target: 25 000 attempts | Step size: 500
-🧵 Using 8 threads for parallel processing
+Starting benchmark with pattern 'abc' (checksum: false)
+Target: 25 000 attempts | Step size: 500
+Using 8 threads for parallel processing
 
-📊 500/25 000 (2.0%) | 409,624 addr/s | Avg: 409,624 addr/s
-📊 1 000/25 000 (4.0%) | 398,208 addr/s | Avg: 403,916 addr/s
-📊 1 500/25 000 (6.0%) | 418,728 addr/s | Avg: 408,853 addr/s
+500/25 000 (2.0%) | 409,624 addr/s | Avg: 409,624 addr/s
+1 000/25 000 (4.0%) | 398,208 addr/s | Avg: 403,916 addr/s
+1 500/25 000 (6.0%) | 418,728 addr/s | Avg: 408,853 addr/s
 [... continues ...]
-📊 25 000/25 000 (100.0%) | 388,536 addr/s | Avg: 401,960 addr/s
+25 000/25 000 (100.0%) | 388,536 addr/s | Avg: 401,960 addr/s
 
-🏁 Benchmark completed!
+Benchmark completed!
 ═══════════════════════════════════════════════════════════════
-📈 Total attempts: 25 000
-⏱️  Total duration: 62ms
-⚡ Average speed: 401,960 addr/s
-📊 Speed range: 383,136 - 418,728 addr/s
-📏 Speed std dev: ±9,640 addr/s
-🧵 Thread metrics:
+Total attempts: 25 000
+Total duration: 62ms
+Average speed: 401,960 addr/s
+Speed range: 383,136 - 418,728 addr/s
+Speed standard deviation: ±9,640 addr/s
+Thread metrics:
    • Thread utilization: 95.2%
    • Worker efficiency: 98.1%
    • Peak performance: 425,640 addr/s
-💻 Platform: Go go1.21+ (8 CPU cores utilized)
+Platform: Go go1.21+ (8 CPU cores utilized)
 ═══════════════════════════════════════════════════════════════
 ```
 
@@ -796,7 +796,7 @@ graph TD
 
 ## Current Implementation Status
 
-### ✅ Completed Features
+### Completed Features
 - **Streamlined Pool Architecture**: Simple and efficient Pool implementation for parallel processing
 - **Secure Logging System**: Comprehensive logging that never exposes sensitive cryptographic data
 - **Complete EIP-55 Support**: Full checksum validation and generation implementation
@@ -808,7 +808,7 @@ graph TD
 - **Performance Optimization**: Efficient worker coordination and minimal overhead
 - **Error Handling**: Comprehensive error handling and validation
 
-### ✅ Secure Logging Features
+### Secure Logging Features
 - **Security-First Design**: Never logs private keys, public keys, or sensitive data
 - **Multiple Log Levels**: ERROR, WARN, INFO, DEBUG with configurable filtering
 - **Multiple Formats**: Text, JSON, and structured formats for different use cases
@@ -818,13 +818,13 @@ graph TD
 - **Error Sanitization**: Automatic removal of sensitive data from error messages
 - **Configurable Output**: File or stdout output with customizable settings
 
-### 🚧 Potential Enhancements
+### Potential Enhancements
 - **Enhanced Testing**: Additional tests for edge cases and error conditions
 - **Performance Monitoring**: Extended metrics and monitoring capabilities
 - **Configuration Options**: Additional customization options for logging and generation
 - **Documentation**: Enhanced documentation and usage examples
 
-### 📋 Current Behavior
+### Current Behavior
 - **Default Threading**: Uses specified thread count with validation (minimum 1)
 - **Secure Logging**: All operations logged securely without sensitive data exposure
 - **EIP-55 Checksum**: Complete support for checksum validation and generation
@@ -848,7 +848,7 @@ The difficulty of finding a bloco address increases exponentially with the lengt
 
 ### Performance Tips
 
-1. **⚠️ CRITICAL: Never use prefixes longer than 4 characters** - they can take days/weeks/years to complete
+1. **CRITICAL: Never use prefixes longer than 4 characters** - they can take days/weeks/years to complete
 2. **Use shorter prefixes/suffixes** for faster generation (1-3 characters are ideal for testing)
 3. **Disable checksum validation** for better performance (use `--checksum` only when needed)
 4. **Use progress flag** (`--progress`) for moderate difficulty generations to see real-time metrics
@@ -885,10 +885,10 @@ export BLOCO_KEYSTORE_KDF=pbkdf2
 
 | Pattern Length | Difficulty Level | Typical Time | Recommendation |
 |----------------|------------------|--------------|----------------|
-| 1-2 characters | Easy | Seconds | ✅ Perfect for testing |
-| 3 characters | Moderate | Minutes | ✅ Good for development |
-| 4 characters | Hard | Hours | ⚠️ Use with caution |
-| 5+ characters | Extreme | Days/Weeks/Years | ❌ **AVOID** - Impractical |
+| 1-2 characters | Easy | Seconds | Perfect for testing |
+| 3 characters | Moderate | Minutes | Good for development |
+| 4 characters | Hard | Hours | Use with caution |
+| 5+ characters | Extreme | Days/Weeks/Years | **AVOID** - Impractical |
 
 ### Secure Log File Structure
 
@@ -932,27 +932,27 @@ All operations are securely logged without sensitive data:
 # - Keystore passwords or sensitive configuration
 ```
 
-🔒 **Secure Logging**: All operational data is logged safely without exposing cryptographic secrets.
+**Secure Logging**: All operational data is logged safely without exposing cryptographic secrets.
 
 ### Security Considerations
 
-- ✅ Uses cryptographically secure random number generation
-- ✅ Implements proper secp256k1 elliptic curve cryptography
-- ✅ Supports EIP-55 checksum validation
-- ✅ Private keys are generated using `crypto/rand`
-- ✅ **NEW**: Secure logging system that NEVER logs sensitive data
-- ✅ **NEW**: Complete EIP-55 checksum support
-- ✅ **NEW**: Secure KeyStore V3 encryption with scrypt/PBKDF2
-- ✅ **NEW**: Automatic secure password generation (12+ chars, mixed complexity)
-- ✅ **NEW**: Atomic file operations with secure permissions (600)
-- ✅ **NEW**: Thread-safe keystore operations with retry mechanisms
-- ✅ **NEW**: Error sanitization prevents sensitive data leaks in logs
-- ✅ **NEW**: Configurable log levels and formats (all secure)
-- ⚠️ **Always verify generated addresses before use**
-- ⚠️ **Keep private keys and keystore passwords secure**
-- ⚠️ **Store keystore files and passwords separately**
-- ⚠️ **Backup keystore files and passwords securely**
-- ⚠️ **Securely delete old log files that may contain sensitive data**
+- Uses cryptographically secure random number generation
+- Implements proper secp256k1 elliptic curve cryptography
+- Supports EIP-55 checksum validation
+- Private keys are generated using `crypto/rand`
+- **NEW**: Secure logging system that NEVER logs sensitive data
+- **NEW**: Complete EIP-55 checksum support
+- **NEW**: Secure KeyStore V3 encryption with scrypt/PBKDF2
+- **NEW**: Automatic secure password generation (12+ chars, mixed complexity)
+- **NEW**: Atomic file operations with secure permissions (600)
+- **NEW**: Thread-safe keystore operations with retry mechanisms
+- **NEW**: Error sanitization prevents sensitive data leaks in logs
+- **NEW**: Configurable log levels and formats (all secure)
+- **Always verify generated addresses before use**
+- **Keep private keys and keystore passwords secure**
+- **Store keystore files and passwords separately**
+- **Backup keystore files and passwords securely**
+- **Securely delete old log files that may contain sensitive data**
 
 ## Technical Implementation Details
 
@@ -1054,13 +1054,13 @@ func handleGenerateWallet(w http.ResponseWriter, r *http.Request) {
 
 ## Testing Status
 
-### ✅ Implemented Tests
+### Implemented Tests
 - **Core Cryptographic Functions**: Tests for address generation, validation, and checksum
 - **Statistical Calculations**: Tests for difficulty, probability, and time estimation functions
 - **Utility Functions**: Tests for hex validation, number formatting, and duration formatting
 - **Basic Integration**: Tests for single-threaded wallet generation
 
-### 🚧 Tests In Progress
+### Tests In Progress
 - **Pool Components**: Unit tests for Pool and StatsCollector
 - **Secure Logging**: Tests for SecureLogger functionality and data sanitization
 - **EIP-55 Checksum**: Tests for checksum validation and generation
@@ -1123,9 +1123,9 @@ Monitor generation performance using the built-in statistics:
 ./bloco-eth --prefix abcd --progress --count 1
 ```
 
-⚠️ **Never use patterns longer than 4 characters** - they are impractical and can take days/weeks/years to complete, even on high-performance hardware.
+**Never use patterns longer than 4 characters** - they are impractical and can take days/weeks/years to complete, even on high-performance hardware.
 
-🔒 **All operations are securely logged** without exposing sensitive cryptographic data. Only addresses, timing, and operational metrics are recorded.
+**All operations are securely logged** without exposing sensitive cryptographic data. Only addresses, timing, and operational metrics are recorded.
 
 ### Secure Logging Issues
 
