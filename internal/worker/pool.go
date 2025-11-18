@@ -2,20 +2,13 @@ package worker
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/rand"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/crypto"
-	bip32 "github.com/tyler-smith/go-bip32"
-	"github.com/tyler-smith/go-bip39"
-	"golang.org/x/crypto/sha3"
-
 	"bloco-eth/internal/config"
+	internalCrypto "bloco-eth/internal/crypto"
 	"bloco-eth/pkg/errors"
 	"bloco-eth/pkg/logging"
 	"bloco-eth/pkg/wallet"
@@ -24,6 +17,7 @@ import (
 // Pool is a minimal implementation that mimics the working monolithic version
 type Pool struct {
 	threadCount    int
+	adapter        internalCrypto.ChainAdapter
 	mu             sync.RWMutex
 	isRunning      bool
 	logger         logging.SecureLogger
@@ -53,6 +47,14 @@ func NewPoolWithConfig(threadCount int, cfg *config.Config) *Pool {
 		cfg = config.DefaultConfig()
 	}
 
+	// Get the appropriate adapter for the configured chain
+	adapter, err := internalCrypto.GetAdapter(cfg.Chain)
+	if err != nil {
+		// Fall back to Ethereum adapter if chain is not supported
+		fmt.Printf("Warning: %v, falling back to Ethereum\n", err)
+		adapter = internalCrypto.NewEthereumAdapter()
+	}
+
 	// Create SecureLogger from configuration
 	logConfig, err := createLogConfigFromAppConfig(cfg)
 	if err != nil {
@@ -78,6 +80,7 @@ func NewPoolWithConfig(threadCount int, cfg *config.Config) *Pool {
 
 	return &Pool{
 		threadCount:    threadCount,
+		adapter:        adapter,
 		isRunning:      false,
 		logger:         logger,
 		statsCollector: statsCollector,
@@ -129,6 +132,11 @@ func (p *Pool) GetStatsCollector() *StatsCollector {
 
 // GenerateWalletWithContext generates a wallet using the worker pool
 func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.GenerationCriteria) (*wallet.GenerationResult, error) {
+	// Validate pattern using the adapter
+	if err := p.adapter.ValidatePattern(criteria.Prefix, criteria.Suffix); err != nil {
+		return nil, fmt.Errorf("pattern validation failed: %w", err)
+	}
+
 	// Log operation start
 	if p.logger != nil {
 		params := map[string]interface{}{
@@ -137,6 +145,7 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 			"checksum":     criteria.IsChecksum,
 			"threads":      p.threadCount,
 			"use_mnemonic": criteria.UseMnemonic,
+			"chain":        p.adapter.ChainName(),
 		}
 		if err := p.logger.LogOperationStart("wallet_generation", params); err != nil {
 			fmt.Printf("Warning: Failed to log operation start: %v\n", err)
@@ -192,93 +201,78 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 					lastStatsUpdate = now
 				}
 
-				// Generate private key material based on generation strategy
-				var (
-					privateKey *ecdsa.PrivateKey
-					mnemonic   string
-					err        error
-				)
-
-				if criteria.UseMnemonic {
-					mnemonic, privateKey, err = generateMnemonicPrivateKey()
-					if err != nil {
-						if p.logger != nil {
-							context := map[string]interface{}{
-								"worker_id":      workerID,
-								"attempts":       attempts,
-								"use_mnemonic":   true,
-								"error_category": "mnemonic_generation",
-							}
-							if logErr := p.logger.LogError("wallet_material_generation", err, context); logErr != nil {
-								_ = logErr
-							}
-						}
-						continue
-					}
-				} else {
-					privateKey, err = ecdsa.GenerateKey(crypto.S256(), rand.Reader)
-					if err != nil {
-						// Log crypto error (but don't stop the worker)
-						if p.logger != nil {
-							context := map[string]interface{}{
-								"worker_id": workerID,
-								"attempts":  attempts,
-							}
-							if logErr := p.logger.LogError("crypto_key_generation", err, context); logErr != nil {
-								// Intentionally ignore log errors to prevent output spam during intensive operations
-								// This ensures the worker continues operating even if logging fails
-								_ = logErr // Make the empty branch explicit
-							}
-						}
-						continue
-					}
-				}
-
-				// Get public key and address
-				publicKey := privateKey.Public()
-				publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
-				if !ok {
-					// Log type assertion error
+				// Generate key material using the adapter
+				km, err := p.adapter.GenerateKeyMaterial()
+				if err != nil {
+					// Log crypto error (but don't stop the worker)
 					if p.logger != nil {
-						typeErr := fmt.Errorf("failed to cast public key to ECDSA")
 						context := map[string]interface{}{
 							"worker_id": workerID,
 							"attempts":  attempts,
+							"chain":     p.adapter.ChainName(),
 						}
-						if logErr := p.logger.LogError("crypto_key_conversion", typeErr, context); logErr != nil {
-							// Intentionally ignore log errors to prevent output spam during intensive operations
-							// This ensures the worker continues operating even if logging fails
+						if logErr := p.logger.LogError("crypto_key_generation", err, context); logErr != nil {
 							_ = logErr // Make the empty branch explicit
 						}
 					}
 					continue
 				}
 
-				address := crypto.PubkeyToAddress(*publicKeyECDSA)
-				addressStr := address.Hex()
+				// Format address using the adapter
+				address, err := p.adapter.FormatAddress(km)
+				if err != nil {
+					if p.logger != nil {
+						context := map[string]interface{}{
+							"worker_id": workerID,
+							"attempts":  attempts,
+							"chain":     p.adapter.ChainName(),
+						}
+						if logErr := p.logger.LogError("address_formatting", err, context); logErr != nil {
+							_ = logErr
+						}
+					}
+					continue
+				}
 
-				// Check if address matches criteria
-				if isValidBlocoAddress(addressStr, criteria.Prefix, criteria.Suffix, criteria.IsChecksum) {
+				// Check if address matches criteria using the adapter
+				if p.adapter.MatchesPattern(address, criteria) {
 					// Found a match!
-					privateKeyBytes := crypto.FromECDSA(privateKey)
-					privateKeyHex := fmt.Sprintf("%x", privateKeyBytes)
+					privateKeyHex, err := p.adapter.FormatPrivateKey(km)
+					if err != nil {
+						if p.logger != nil {
+							context := map[string]interface{}{
+								"worker_id": workerID,
+								"attempts":  attempts,
+							}
+							if logErr := p.logger.LogError("private_key_formatting", err, context); logErr != nil {
+								_ = logErr
+							}
+						}
+						continue
+					}
 
-					// Get public key hex
-					publicKeyBytes := crypto.FromECDSAPub(publicKeyECDSA)
-					publicKeyHex := fmt.Sprintf("%x", publicKeyBytes)
-
-					// Use checksum address if checksum is required
-					finalAddress := addressStr
-					if criteria.IsChecksum {
-						finalAddress = toChecksumAddress(addressStr)
+					publicKeyHex, err := p.adapter.FormatPublicKey(km)
+					if err != nil {
+						if p.logger != nil {
+							context := map[string]interface{}{
+								"worker_id": workerID,
+								"attempts":  attempts,
+							}
+							if logErr := p.logger.LogError("public_key_formatting", err, context); logErr != nil {
+								_ = logErr
+							}
+						}
+						continue
 					}
 
 					result := &wallet.GenerationResult{
 						Wallet: &wallet.Wallet{
-							Address:    finalAddress,
+							Address:    address,
 							PublicKey:  publicKeyHex,
 							PrivateKey: privateKeyHex,
-							Mnemonic:   mnemonic,
+							Mnemonic:   "", // TODO: Add mnemonic support to adapters
+							Chain:      p.adapter.ChainName(),
+							Encoding:   p.adapter.AddressEncoding(),
 							CreatedAt:  time.Now(),
 						},
 						Attempts: attempts,
@@ -351,203 +345,6 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 	}
 }
 
-// generateMnemonicPrivateKey creates a new mnemonic phrase and derives the corresponding private key
-func generateMnemonicPrivateKey() (string, *ecdsa.PrivateKey, error) {
-	// Generate 128 bits of entropy for a 12-word mnemonic to balance security and performance
-	entropy, err := bip39.NewEntropy(128)
-	if err != nil {
-		return "", nil, err
-	}
-
-	mnemonic, err := bip39.NewMnemonic(entropy)
-	if err != nil {
-		return "", nil, err
-	}
-
-	seed := bip39.NewSeed(mnemonic, "")
-	masterKey, err := bip32.NewMasterKey(seed)
-	if err != nil {
-		return "", nil, err
-	}
-
-	derivationPath := []uint32{
-		bip32.FirstHardenedChild + 44,
-		bip32.FirstHardenedChild + 60,
-		bip32.FirstHardenedChild + 0,
-		0,
-		0,
-	}
-
-	key := masterKey
-	for _, child := range derivationPath {
-		key, err = key.NewChildKey(child)
-		if err != nil {
-			return "", nil, err
-		}
-	}
-
-	privateKey, err := crypto.ToECDSA(key.Key)
-	if err != nil {
-		return "", nil, err
-	}
-
-	return mnemonic, privateKey, nil
-}
-
-// isValidBlocoAddress checks if an address matches the criteria
-func isValidBlocoAddress(address, prefix, suffix string, isChecksum bool) bool {
-	if !strings.HasPrefix(address, "0x") {
-		address = "0x" + address
-	}
-
-	// Debug logging
-	if os.Getenv("BLOCO_DEBUG") != "" {
-		fmt.Printf("DEBUG: Validating address %s with prefix=%q suffix=%q checksum=%v\n",
-			address, prefix, suffix, isChecksum)
-	}
-
-	// If checksum validation is required, use EIP-55 check
-	if isChecksum && (prefix != "" || suffix != "") {
-		result := isEIP55Checksum(address, prefix, suffix)
-		if os.Getenv("BLOCO_DEBUG") != "" {
-			fmt.Printf("DEBUG: EIP55 validation result: %v\n", result)
-		}
-		return result
-	}
-
-	// For non-checksum validation, use case-insensitive comparison
-	// Remove "0x" prefix
-	addrWithoutPrefix := strings.ToLower(address[2:])
-	lowerPrefix := strings.ToLower(prefix)
-	lowerSuffix := strings.ToLower(suffix)
-
-	// Check prefix
-	if prefix != "" && !strings.HasPrefix(addrWithoutPrefix, lowerPrefix) {
-		if os.Getenv("BLOCO_DEBUG") != "" {
-			fmt.Printf("DEBUG: Prefix check failed: %q does not start with %q\n",
-				addrWithoutPrefix, lowerPrefix)
-		}
-		return false
-	}
-
-	// Check suffix
-	if suffix != "" && !strings.HasSuffix(addrWithoutPrefix, lowerSuffix) {
-		if os.Getenv("BLOCO_DEBUG") != "" {
-			fmt.Printf("DEBUG: Suffix check failed: %q does not end with %q\n",
-				addrWithoutPrefix, lowerSuffix)
-		}
-		return false
-	}
-
-	if os.Getenv("BLOCO_DEBUG") != "" {
-		fmt.Printf("DEBUG: Address validation passed\n")
-	}
-	return true
-}
-
-// toChecksumAddress converts an address to EIP-55 checksum format
-func toChecksumAddress(address string) string {
-	if !strings.HasPrefix(address, "0x") {
-		address = "0x" + address
-	}
-
-	// Remove 0x prefix for hashing
-	addrWithoutPrefix := strings.ToLower(address[2:])
-	addrBytes := []byte(addrWithoutPrefix)
-
-	// Create Keccak256 hash
-	hasher := sha3.NewLegacyKeccak256()
-	hasher.Write(addrBytes)
-	hash := hasher.Sum(nil)
-
-	// Apply EIP-55 checksum
-	var result strings.Builder
-	result.WriteString("0x")
-
-	for i, char := range addrWithoutPrefix {
-		if char >= '0' && char <= '9' {
-			// Numbers remain unchanged
-			result.WriteByte(byte(char))
-		} else if char >= 'a' && char <= 'f' {
-			// Letters: uppercase if hash bit >= 8, lowercase otherwise
-			hashByte := hash[i/2]
-			var hashBit uint8
-			if i%2 == 0 {
-				hashBit = hashByte >> 4
-			} else {
-				hashBit = hashByte & 0x0f
-			}
-
-			if hashBit >= 8 {
-				result.WriteByte(byte(char - 32)) // Convert to uppercase
-			} else {
-				result.WriteByte(byte(char)) // Keep lowercase
-			}
-		}
-	}
-
-	return result.String()
-}
-
-// isEIP55Checksum validates EIP-55 checksum for specific pattern
-func isEIP55Checksum(address, prefix, suffix string) bool {
-	if !strings.HasPrefix(address, "0x") {
-		address = "0x" + address
-	}
-
-	// Generate the correct checksum address
-	checksumAddr := toChecksumAddress(address)
-
-	if os.Getenv("BLOCO_DEBUG") != "" {
-		fmt.Printf("DEBUG EIP55: Original=%s Checksum=%s Prefix=%q Suffix=%q\n",
-			address, checksumAddr, prefix, suffix)
-	}
-
-	// Check if the pattern matches the checksum requirements
-	if prefix != "" {
-		prefixPart := checksumAddr[2 : 2+len(prefix)]
-		if !strings.EqualFold(prefixPart, prefix) {
-			if os.Getenv("BLOCO_DEBUG") != "" {
-				fmt.Printf("DEBUG EIP55: Prefix failed - got %q expected %q\n", prefixPart, prefix)
-			}
-			return false
-		}
-		if os.Getenv("BLOCO_DEBUG") != "" {
-			fmt.Printf("DEBUG EIP55: Prefix matched - got %q expected %q\n", prefixPart, prefix)
-		}
-		// For EIP-55 checksum validation, we only need to verify that the pattern
-		// matches case-insensitively. The checksum correctness is already ensured
-		// by toChecksumAddress() function.
-	}
-
-	if suffix != "" {
-		suffixStart := len(checksumAddr) - len(suffix)
-		if suffixStart < 2 {
-			if os.Getenv("BLOCO_DEBUG") != "" {
-				fmt.Printf("DEBUG EIP55: Suffix too long for address\n")
-			}
-			return false
-		}
-		suffixPart := checksumAddr[suffixStart:]
-		if !strings.EqualFold(suffixPart, suffix) {
-			if os.Getenv("BLOCO_DEBUG") != "" {
-				fmt.Printf("DEBUG EIP55: Suffix failed - got %q expected %q\n", suffixPart, suffix)
-			}
-			return false
-		}
-		if os.Getenv("BLOCO_DEBUG") != "" {
-			fmt.Printf("DEBUG EIP55: Suffix matched - got %q expected %q\n", suffixPart, suffix)
-		}
-		// For EIP-55 checksum validation, we only need to verify that the pattern
-		// matches case-insensitively. The checksum correctness is already ensured
-		// by toChecksumAddress() function.
-	}
-
-	if os.Getenv("BLOCO_DEBUG") != "" {
-		fmt.Printf("DEBUG EIP55: Validation passed\n")
-	}
-	return true
-}
 
 // createLogConfigFromAppConfig converts internal config to logging package config
 func createLogConfigFromAppConfig(cfg *config.Config) (*logging.LogConfig, error) {
