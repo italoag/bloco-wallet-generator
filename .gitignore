@@ -10,3 +10,4 @@ keystores/
 bloco-eth
 bloco-btc
 bloco-sol
+internal/worker/validation_test.go.old

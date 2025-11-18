@@ -47,7 +47,7 @@ func (e *EthereumAdapter) GenerateKeyMaterial() (*KeyMaterial, error) {
 	return km, nil
 }
 
-// FormatAddress converts key material to Ethereum address (40 hex chars, no 0x prefix)
+// FormatAddress converts key material to Ethereum address (with 0x prefix)
 func (e *EthereumAdapter) FormatAddress(km *KeyMaterial) (string, error) {
 	if km == nil || len(km.PublicKey) == 0 {
 		return "", fmt.Errorf("invalid key material")
@@ -66,7 +66,7 @@ func (e *EthereumAdapter) FormatAddress(km *KeyMaterial) (string, error) {
 	hash.Write(pubKeyBytes)
 	addressBytes := hash.Sum(nil)[12:] // Take last 20 bytes
 
-	return hex.EncodeToString(addressBytes), nil
+	return "0x" + hex.EncodeToString(addressBytes), nil
 }
 
 // FormatPrivateKey converts private key to hex string (64 chars, no 0x prefix)

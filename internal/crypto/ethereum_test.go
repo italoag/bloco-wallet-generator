@@ -1,6 +1,7 @@
 package crypto
 
 import (
+	"strings"
 	"testing"
 
 	"bloco-eth/pkg/wallet"
@@ -49,12 +50,19 @@ func TestEthereumAdapter_FormatAddress(t *testing.T) {
 		t.Fatalf("FormatAddress() failed: %v", err)
 	}
 
-	if len(address) != 40 {
-		t.Errorf("Address length = %d, want 40", len(address))
+	// Address should be 42 chars (0x + 40 hex chars)
+	if len(address) != 42 {
+		t.Errorf("Address length = %d, want 42", len(address))
 	}
 
-	// Check if address is valid hex
-	for _, char := range address {
+	// Should start with 0x
+	if !strings.HasPrefix(address, "0x") {
+		t.Errorf("Address should start with 0x, got: %s", address)
+	}
+
+	// Check if address (excluding 0x) is valid hex
+	hexPart := address[2:]
+	for _, char := range hexPart {
 		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
 			t.Errorf("Address contains non-hex character: %c", char)
 		}
