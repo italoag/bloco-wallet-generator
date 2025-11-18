@@ -4,12 +4,14 @@ import (
 	"time"
 )
 
-// Wallet represents an Ethereum wallet with address and private key
+// Wallet represents a blockchain wallet with address and private key
 type Wallet struct {
 	Address    string    `json:"address"`
 	PublicKey  string    `json:"public_key"`
 	PrivateKey string    `json:"private_key"`
 	Mnemonic   string    `json:"mnemonic,omitempty"`
+	Chain      string    `json:"chain"`            // Chain identifier (ethereum, bitcoin, solana)
+	Encoding   string    `json:"encoding"`         // Address encoding (hex, base58, etc.)
 	CreatedAt  time.Time `json:"created_at"`
 }
 
@@ -29,6 +31,7 @@ type GenerationCriteria struct {
 	IsChecksum  bool   `json:"is_checksum"`
 	UseMnemonic bool   `json:"use_mnemonic,omitempty"`
 	MaxAttempts int64  `json:"max_attempts,omitempty"`
+	Chain       string `json:"chain,omitempty"` // Chain to generate for (ethereum, bitcoin, solana)
 }
 
 // GenerationRequest represents a request for wallet generation
@@ -73,10 +76,18 @@ type BenchmarkResult struct {
 
 // IsValid checks if a wallet is valid
 func (w *Wallet) IsValid() bool {
-	return w != nil &&
-		len(w.Address) == 40 &&
-		len(w.PrivateKey) == 64 &&
-		!w.CreatedAt.IsZero()
+	if w == nil || w.CreatedAt.IsZero() {
+		return false
+	}
+	
+	// Basic validation - must have address and private key
+	if w.Address == "" || w.PrivateKey == "" {
+		return false
+	}
+	
+	// Chain-specific validation can be added later
+	// For now, we accept any non-empty address/key
+	return true
 }
 
 // GetChecksumAddress returns the address with proper checksum formatting
@@ -108,6 +119,7 @@ func (gc *GenerationCriteria) IsEmpty() bool {
 }
 
 // Validate checks if the generation criteria is valid
+// Note: Chain-specific validation should be done by the adapter
 func (gc *GenerationCriteria) Validate() error {
 	// Pattern length validation
 	patternLength := gc.GetPatternLength()
@@ -116,23 +128,15 @@ func (gc *GenerationCriteria) Validate() error {
 			"pattern too long (max 20 characters)")
 	}
 
-	// Hex validation
-	if !isValidHex(gc.Prefix) {
-		return NewValidationError("criteria_validation",
-			"prefix contains invalid hex characters")
-	}
-
-	if !isValidHex(gc.Suffix) {
-		return NewValidationError("criteria_validation",
-			"suffix contains invalid hex characters")
-	}
-
 	// Max attempts validation
 	if gc.MaxAttempts < 0 {
 		return NewValidationError("criteria_validation",
 			"max attempts cannot be negative")
 	}
 
+	// Note: Pattern character validation (hex, base58, etc.) is now 
+	// delegated to the ChainAdapter.ValidatePattern() method
+	
 	return nil
 }
 

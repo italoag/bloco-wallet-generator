@@ -10,12 +10,14 @@ import (
 
 // Config holds all application configuration
 type Config struct {
-	Worker   WorkerConfig   `yaml:"worker"`
-	TUI      TUIConfig      `yaml:"tui"`
-	Crypto   CryptoConfig   `yaml:"crypto"`
-	CLI      CLIConfig      `yaml:"cli"`
-	KeyStore KeyStoreConfig `yaml:"keystore"`
-	Logging  LoggingConfig  `yaml:"logging"`
+	Worker   WorkerConfig              `yaml:"worker"`
+	TUI      TUIConfig                 `yaml:"tui"`
+	Crypto   CryptoConfig              `yaml:"crypto"`
+	CLI      CLIConfig                 `yaml:"cli"`
+	KeyStore KeyStoreConfig            `yaml:"keystore"`
+	Logging  LoggingConfig             `yaml:"logging"`
+	Chain    string                    `yaml:"chain"`    // Selected blockchain (ethereum, bitcoin, solana)
+	Networks map[string]NetworkConfig  `yaml:"networks"` // Network-specific configurations
 }
 
 // WorkerConfig contains worker-related configuration
@@ -76,6 +78,15 @@ type LoggingConfig struct {
 	BufferSize  int    `yaml:"buffer_size"`
 }
 
+// NetworkConfig contains blockchain-specific configuration
+type NetworkConfig struct {
+	Curve          string                 `yaml:"curve"`           // Cryptographic curve (secp256k1, ed25519)
+	Encoding       string                 `yaml:"encoding"`        // Address encoding (hex, base58, bech32)
+	DerivationPath string                 `yaml:"derivation_path"` // BIP-44 derivation path
+	AddressFormat  string                 `yaml:"address_format"`  // Address format (P2PKH, P2SH, native, etc.)
+	Options        map[string]interface{} `yaml:"options"`         // Additional chain-specific options
+}
+
 // DefaultConfig returns a configuration with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{
@@ -125,11 +136,42 @@ func DefaultConfig() *Config {
 			MaxFiles:    5,
 			BufferSize:  1000,
 		},
+		Chain: "ethereum", // Default to Ethereum for backward compatibility
+		Networks: map[string]NetworkConfig{
+			"ethereum": {
+				Curve:          "secp256k1",
+				Encoding:       "hex",
+				DerivationPath: "m/44'/60'/0'/0/0",
+				AddressFormat:  "eip55",
+				Options:        make(map[string]interface{}),
+			},
+			"bitcoin": {
+				Curve:          "secp256k1",
+				Encoding:       "base58",
+				DerivationPath: "m/44'/0'/0'/0/0",
+				AddressFormat:  "p2pkh",
+				Options: map[string]interface{}{
+					"network": "mainnet",
+				},
+			},
+			"solana": {
+				Curve:          "ed25519",
+				Encoding:       "base58",
+				DerivationPath: "m/44'/501'/0'/0'",
+				AddressFormat:  "native",
+				Options:        make(map[string]interface{}),
+			},
+		},
 	}
 }
 
 // LoadFromEnvironment loads configuration from environment variables
 func (c *Config) LoadFromEnvironment() {
+	// Chain configuration
+	if chain := os.Getenv("BLOCO_CHAIN"); chain != "" {
+		c.Chain = chain
+	}
+
 	// Worker configuration
 	if threads := os.Getenv("BLOCO_THREADS"); threads != "" {
 		if val, err := strconv.Atoi(threads); err == nil && val > 0 {
@@ -302,6 +344,17 @@ func (c *Config) Validate() error {
 
 	if c.Logging.BufferSize < 0 {
 		return fmt.Errorf("log buffer size must be non-negative, got %d", c.Logging.BufferSize)
+	}
+
+	// Validate Chain configuration
+	validChains := []string{"ethereum", "bitcoin", "solana"}
+	if !contains(validChains, c.Chain) {
+		return fmt.Errorf("invalid chain: %s (valid: %v)", c.Chain, validChains)
+	}
+
+	// Ensure selected chain has a network configuration
+	if _, exists := c.Networks[c.Chain]; !exists {
+		return fmt.Errorf("no network configuration found for chain: %s", c.Chain)
 	}
 
 	return nil

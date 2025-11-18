@@ -52,6 +52,8 @@ func TestConfig_Validate_LoggingConfig(t *testing.T) {
 				Crypto:   DefaultConfig().Crypto,
 				CLI:      DefaultConfig().CLI,
 				KeyStore: DefaultConfig().KeyStore,
+				Chain:    "ethereum",
+				Networks: DefaultConfig().Networks,
 				Logging: LoggingConfig{
 					Enabled:     true,
 					Level:       "info",
@@ -72,6 +74,8 @@ func TestConfig_Validate_LoggingConfig(t *testing.T) {
 				Crypto:   DefaultConfig().Crypto,
 				CLI:      DefaultConfig().CLI,
 				KeyStore: DefaultConfig().KeyStore,
+				Chain:    "ethereum",
+				Networks: DefaultConfig().Networks,
 				Logging: LoggingConfig{
 					Enabled:     true,
 					Level:       "invalid",
@@ -92,6 +96,8 @@ func TestConfig_Validate_LoggingConfig(t *testing.T) {
 				Crypto:   DefaultConfig().Crypto,
 				CLI:      DefaultConfig().CLI,
 				KeyStore: DefaultConfig().KeyStore,
+				Chain:    "ethereum",
+				Networks: DefaultConfig().Networks,
 				Logging: LoggingConfig{
 					Enabled:     true,
 					Level:       "info",
@@ -112,6 +118,8 @@ func TestConfig_Validate_LoggingConfig(t *testing.T) {
 				Crypto:   DefaultConfig().Crypto,
 				CLI:      DefaultConfig().CLI,
 				KeyStore: DefaultConfig().KeyStore,
+				Chain:    "ethereum",
+				Networks: DefaultConfig().Networks,
 				Logging: LoggingConfig{
 					Enabled:     true,
 					Level:       "info",

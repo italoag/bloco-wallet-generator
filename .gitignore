@@ -7,3 +7,6 @@ build/
 references/
 keystores/
 .crush/
+bloco-eth
+bloco-btc
+bloco-sol
