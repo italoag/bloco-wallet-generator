@@ -307,3 +307,29 @@ func TestPool_GenerateWalletWithContext_InvalidCriteria(t *testing.T) {
 		t.Error("Should generate valid wallet even with empty criteria")
 	}
 }
+
+func BenchmarkIsValidBlocoAddress(b *testing.B) {
+	address := "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+	prefix := "71"
+	suffix := "6f"
+
+	b.Run("NoChecksum", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			matchesCriteria(address, prefix, suffix, false)
+		}
+	})
+
+	b.Run("WithChecksum", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			matchesCriteria(address, prefix, suffix, true)
+		}
+	})
+
+	b.Run("WithChecksum_NoMatch", func(b *testing.B) {
+		// Address that doesn't match prefix, so optimization should skip checksum
+		badPrefix := "FF"
+		for i := 0; i < b.N; i++ {
+			matchesCriteria(address, badPrefix, suffix, true)
+		}
+	})
+}

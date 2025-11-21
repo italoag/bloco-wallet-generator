@@ -51,68 +51,8 @@ func (ag *AddressGenerator) GenerateWallet() (*wallet.Wallet, error) {
 
 // PrivateKeyToAddress converts a private key to an Ethereum address
 func (ag *AddressGenerator) PrivateKeyToAddress(privateKey []byte) (string, error) {
-	if len(privateKey) != 32 {
-		return "", errors.NewValidationError("private_key_to_address",
-			"private key must be 32 bytes")
-	}
-
-	// Get objects from pools
-	cryptoPool := ag.poolManager.GetCryptoPool()
-	hasherPool := ag.poolManager.GetHasherPool()
-	bufferPool := ag.poolManager.GetBufferPool()
-
-	privateKeyInt := cryptoPool.GetBigInt()
-	privateKeyECDSA := cryptoPool.GetECDSAKey()
-	hasher := hasherPool.GetKeccak()
-	publicKeyBytes := cryptoPool.GetPublicKeyBuffer()
-	hexBuffer := bufferPool.GetHexBuffer()
-
-	defer func() {
-		// Return objects to pools
-		cryptoPool.PutBigInt(privateKeyInt)
-		cryptoPool.PutECDSAKey(privateKeyECDSA)
-		hasherPool.PutKeccak(hasher)
-		cryptoPool.PutPublicKeyBuffer(publicKeyBytes)
-		bufferPool.PutHexBuffer(hexBuffer)
-	}()
-
-	// Convert private key bytes to ECDSA private key
-	privateKeyInt.SetBytes(privateKey)
-	privateKeyECDSA.D = privateKeyInt
-	privateKeyECDSA.Curve = crypto.S256()
-
-	// Calculate public key coordinates
-	privateKeyECDSA.X, privateKeyECDSA.Y = crypto.S256().ScalarBaseMult(privateKey)
-
-	// Get uncompressed public key bytes (without 0x04 prefix)
-	publicKeyBytes = publicKeyBytes[:0] // Reset but keep capacity
-
-	// Append X and Y coordinates (32 bytes each)
-	xBytes := privateKeyECDSA.X.Bytes()
-	yBytes := privateKeyECDSA.Y.Bytes()
-
-	// Pad to 32 bytes if necessary
-	for len(xBytes) < 32 {
-		publicKeyBytes = append(publicKeyBytes, 0)
-	}
-	publicKeyBytes = append(publicKeyBytes, xBytes...)
-
-	for len(yBytes) < 32 {
-		publicKeyBytes = append(publicKeyBytes, 0)
-	}
-	publicKeyBytes = append(publicKeyBytes, yBytes...)
-
-	// Calculate Keccak256 hash using pooled hasher
-	hasher.Reset()
-	hasher.Write(publicKeyBytes)
-	hash := hasher.Sum(nil)
-
-	// Take the last 20 bytes as the address
-	address := hash[len(hash)-20:]
-
-	// Use pre-allocated buffer for hex encoding
-	hex.Encode(hexBuffer, address)
-	return string(hexBuffer[:40]), nil
+	// Use the optimized generation logic to avoid code duplication and improve performance
+	return ag.OptimizedAddressGeneration(privateKey)
 }
 
 // GeneratePrivateKey generates a cryptographically secure private key

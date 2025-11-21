@@ -160,9 +160,9 @@ func TestIsValidBlocoAddress_CaseInsensitive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isValidBlocoAddress(tt.address, tt.prefix, tt.suffix, tt.checksum)
+			result := matchesCriteria(tt.address, tt.prefix, tt.suffix, tt.checksum)
 			if result != tt.expected {
-				t.Errorf("isValidBlocoAddress(%q, %q, %q, %v) = %v, expected %v",
+				t.Errorf("matchesCriteria(%q, %q, %q, %v) = %v, expected %v",
 					tt.address, tt.prefix, tt.suffix, tt.checksum, result, tt.expected)
 			}
 		})
@@ -292,9 +292,9 @@ func TestIsValidBlocoAddress_EIP55Checksum(t *testing.T) {
 				}
 			}
 
-			result := isValidBlocoAddress(tt.address, tt.prefix, tt.suffix, tt.checksum)
+			result := matchesCriteria(tt.address, tt.prefix, tt.suffix, tt.checksum)
 			if result != tt.expected {
-				t.Errorf("isValidBlocoAddress(%q, %q, %q, %v) = %v, expected %v\nNote: %s",
+				t.Errorf("matchesCriteria(%q, %q, %q, %v) = %v, expected %v\nNote: %s",
 					tt.address, tt.prefix, tt.suffix, tt.checksum, result, tt.expected, tt.note)
 
 				// Additional debugging information
@@ -440,9 +440,9 @@ func TestIsValidBlocoAddress_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isValidBlocoAddress(tt.address, tt.prefix, tt.suffix, tt.checksum)
+			result := matchesCriteria(tt.address, tt.prefix, tt.suffix, tt.checksum)
 			if result != tt.expected {
-				t.Errorf("isValidBlocoAddress(%q, %q, %q, %v) = %v, expected %v",
+				t.Errorf("matchesCriteria(%q, %q, %q, %v) = %v, expected %v",
 					tt.address, tt.prefix, tt.suffix, tt.checksum, result, tt.expected)
 			}
 		})
@@ -600,12 +600,12 @@ func TestSuffixValidationBugDocumentation(t *testing.T) {
 		// This should pass because the pattern matches case-insensitively
 		// But it currently fails due to the bug
 
-		result := isValidBlocoAddress(testAddress, "", "aed", true)
+		result := matchesCriteria(testAddress, "", "aed", true)
 		expected := true // Should pass
 
 		if result != expected {
 			t.Errorf("DOCUMENTED BUG: Suffix validation fails in checksum mode")
-			t.Errorf("isValidBlocoAddress(%q, %q, %q, %v) = %v, expected %v",
+			t.Errorf("matchesCriteria(%q, %q, %q, %v) = %v, expected %v",
 				testAddress, "", "aed", true, result, expected)
 			t.Errorf("The address ends with 'Aed' but user pattern 'aed' should match case-insensitively")
 			t.Errorf("This fails because isEIP55Checksum compares 'Aed' != 'aed' directly")
@@ -619,12 +619,12 @@ func TestSuffixValidationBugDocumentation(t *testing.T) {
 		// This should pass because the pattern matches case-insensitively
 		// But it currently fails due to the same bug
 
-		result := isValidBlocoAddress(testAddress, "5aa", "", true)
+		result := matchesCriteria(testAddress, "5aa", "", true)
 		expected := true // Should pass
 
 		if result != expected {
 			t.Errorf("DOCUMENTED BUG: Prefix validation fails in checksum mode")
-			t.Errorf("isValidBlocoAddress(%q, %q, %q, %v) = %v, expected %v",
+			t.Errorf("matchesCriteria(%q, %q, %q, %v) = %v, expected %v",
 				testAddress, "5aa", "", true, result, expected)
 			t.Errorf("The address starts with '5aA' but user pattern '5aa' should match case-insensitively")
 			t.Errorf("This fails because isEIP55Checksum compares '5aA' != '5aa' directly")
@@ -635,17 +635,17 @@ func TestSuffixValidationBugDocumentation(t *testing.T) {
 	t.Run("case_insensitive_works", func(t *testing.T) {
 		// Same patterns should work in case-insensitive mode
 
-		resultSuffix := isValidBlocoAddress(testAddress, "", "aed", false)
+		resultSuffix := matchesCriteria(testAddress, "", "aed", false)
 		if !resultSuffix {
 			t.Errorf("Case-insensitive suffix validation should work: %v", resultSuffix)
 		}
 
-		resultPrefix := isValidBlocoAddress(testAddress, "5aa", "", false)
+		resultPrefix := matchesCriteria(testAddress, "5aa", "", false)
 		if !resultPrefix {
 			t.Errorf("Case-insensitive prefix validation should work: %v", resultPrefix)
 		}
 
-		resultBoth := isValidBlocoAddress(testAddress, "5aa", "aed", false)
+		resultBoth := matchesCriteria(testAddress, "5aa", "aed", false)
 		if !resultBoth {
 			t.Errorf("Case-insensitive prefix+suffix validation should work: %v", resultBoth)
 		}
