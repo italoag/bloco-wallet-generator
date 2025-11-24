@@ -160,7 +160,7 @@ func TestIsValidBlocoAddress_CaseInsensitive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := matchesCriteria(tt.address, tt.prefix, tt.suffix, tt.checksum)
+			result := matchesCriteria(tt.address, tt.prefix, tt.suffix, tt.checksum, "ethereum")
 			if result != tt.expected {
 				t.Errorf("matchesCriteria(%q, %q, %q, %v) = %v, expected %v",
 					tt.address, tt.prefix, tt.suffix, tt.checksum, result, tt.expected)
@@ -292,7 +292,7 @@ func TestIsValidBlocoAddress_EIP55Checksum(t *testing.T) {
 				}
 			}
 
-			result := matchesCriteria(tt.address, tt.prefix, tt.suffix, tt.checksum)
+			result := matchesCriteria(tt.address, tt.prefix, tt.suffix, tt.checksum, "ethereum")
 			if result != tt.expected {
 				t.Errorf("matchesCriteria(%q, %q, %q, %v) = %v, expected %v\nNote: %s",
 					tt.address, tt.prefix, tt.suffix, tt.checksum, result, tt.expected, tt.note)
@@ -440,7 +440,7 @@ func TestIsValidBlocoAddress_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := matchesCriteria(tt.address, tt.prefix, tt.suffix, tt.checksum)
+			result := matchesCriteria(tt.address, tt.prefix, tt.suffix, tt.checksum, "ethereum")
 			if result != tt.expected {
 				t.Errorf("matchesCriteria(%q, %q, %q, %v) = %v, expected %v",
 					tt.address, tt.prefix, tt.suffix, tt.checksum, result, tt.expected)
@@ -600,7 +600,7 @@ func TestSuffixValidationBugDocumentation(t *testing.T) {
 		// This should pass because the pattern matches case-insensitively
 		// But it currently fails due to the bug
 
-		result := matchesCriteria(testAddress, "", "aed", true)
+		result := matchesCriteria(testAddress, "", "aed", true, "ethereum")
 		expected := true // Should pass
 
 		if result != expected {
@@ -619,7 +619,7 @@ func TestSuffixValidationBugDocumentation(t *testing.T) {
 		// This should pass because the pattern matches case-insensitively
 		// But it currently fails due to the same bug
 
-		result := matchesCriteria(testAddress, "5aa", "", true)
+		result := matchesCriteria(testAddress, "5aa", "", true, "ethereum")
 		expected := true // Should pass
 
 		if result != expected {
@@ -635,17 +635,17 @@ func TestSuffixValidationBugDocumentation(t *testing.T) {
 	t.Run("case_insensitive_works", func(t *testing.T) {
 		// Same patterns should work in case-insensitive mode
 
-		resultSuffix := matchesCriteria(testAddress, "", "aed", false)
+		resultSuffix := matchesCriteria(testAddress, "", "aed", false, "ethereum")
 		if !resultSuffix {
 			t.Errorf("Case-insensitive suffix validation should work: %v", resultSuffix)
 		}
 
-		resultPrefix := matchesCriteria(testAddress, "5aa", "", false)
+		resultPrefix := matchesCriteria(testAddress, "5aa", "", false, "ethereum")
 		if !resultPrefix {
 			t.Errorf("Case-insensitive prefix validation should work: %v", resultPrefix)
 		}
 
-		resultBoth := matchesCriteria(testAddress, "5aa", "aed", false)
+		resultBoth := matchesCriteria(testAddress, "5aa", "aed", false, "ethereum")
 		if !resultBoth {
 			t.Errorf("Case-insensitive prefix+suffix validation should work: %v", resultBoth)
 		}
@@ -689,4 +689,68 @@ func TestBugRootCause(t *testing.T) {
 		t.Logf("BUG: For EIP-55 checksum, exact case match will almost always be false")
 		t.Logf("BUG: The function should only require case-insensitive pattern match")
 	})
+}
+
+// TestMatchesCriteria_CaseSensitivity verifies that case sensitivity is handled correctly for different networks
+func TestMatchesCriteria_CaseSensitivity(t *testing.T) {
+	tests := []struct {
+		name       string
+		address    string
+		prefix     string
+		suffix     string
+		isChecksum bool
+		network    string
+		want       bool
+	}{
+		// Ethereum (Hex) - Case insensitive by default (unless checksum matched)
+		{
+			name:       "ETH: Case insensitive match",
+			address:    "0xAbC123...",
+			prefix:     "abc",
+			suffix:     "",
+			isChecksum: false,
+			network:    "ethereum",
+			want:       true, // Should match because ETH is case-insensitive for search
+		},
+		// Solana (Base58) - Case sensitive
+		{
+			name:       "SOL: Case mismatch should fail",
+			address:    "AbC123...",
+			prefix:     "abc", // User asked for lowercase
+			suffix:     "",
+			isChecksum: false,
+			network:    "solana",
+			want:       false, // Should FAIL because 'a' != 'A' in Base58
+		},
+		{
+			name:       "SOL: Exact match should pass",
+			address:    "AbC123...",
+			prefix:     "AbC",
+			suffix:     "",
+			isChecksum: false,
+			network:    "solana",
+			want:       true,
+		},
+		// Bitcoin (Base58) - Case sensitive
+		{
+			name:       "BTC: Case mismatch should fail",
+			address:    "1AbC...",
+			prefix:     "1abc",
+			suffix:     "",
+			isChecksum: false,
+			network:    "bitcoin",
+			want:       false, // Should FAIL
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Updated signature: matchesCriteria(address, prefix, suffix, isChecksum, network)
+			got := matchesCriteria(tt.address, tt.prefix, tt.suffix, tt.isChecksum, tt.network)
+
+			if got != tt.want {
+				t.Errorf("matchesCriteria() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

@@ -266,7 +266,7 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 					addressStr = genWallet.Address
 
 					// Check if address matches criteria
-					if !matchesCriteria(addressStr, criteria.Prefix, criteria.Suffix, criteria.IsChecksum) {
+					if !matchesCriteria(addressStr, criteria.Prefix, criteria.Suffix, criteria.IsChecksum, criteria.Network) {
 						continue
 					}
 
@@ -365,7 +365,7 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 
 					// If we found a match, we need to reconstruct the full private key object for the result
 					// Otherwise we just return the buffer to the pool
-					if matchesCriteria(addressStr, criteria.Prefix, criteria.Suffix, criteria.IsChecksum) {
+					if matchesCriteria(addressStr, criteria.Prefix, criteria.Suffix, criteria.IsChecksum, criteria.Network) {
 						// Only reconstruct ECDSA private key for Ethereum
 						// For Solana and Bitcoin, we'll use the raw bytes directly
 						if criteria.Network == "ethereum" || criteria.Network == "" {
@@ -398,10 +398,9 @@ func (p *Pool) GenerateWalletWithContext(ctx context.Context, criteria wallet.Ge
 				// If we are here from optimized path, it means we found a match.
 				// If we are here from mnemonic path, we haven't checked yet.
 
-				if criteria.UseMnemonic {
-					if !matchesCriteria(addressStr, criteria.Prefix, criteria.Suffix, criteria.IsChecksum) {
-						continue
-					}
+				// Double check match (just in case)
+				if !matchesCriteria(addressStr, criteria.Prefix, criteria.Suffix, criteria.IsChecksum, criteria.Network) {
+					continue
 				}
 
 				// Found a match!
@@ -550,8 +549,10 @@ func generateMnemonicPrivateKey() (string, *ecdsa.PrivateKey, error) {
 
 // matchesCriteria checks if an address matches the given prefix and suffix criteria
 // It performs a fast string check first, and only calculates checksum if necessary
-func matchesCriteria(address, prefix, suffix string, isChecksum bool) bool {
-	// 1. Fast filter: Check pattern on raw address (case-insensitive)
+// matchesCriteria checks if an address matches the given prefix and suffix criteria
+// It performs a fast string check first, and only calculates checksum if necessary
+func matchesCriteria(address, prefix, suffix string, isChecksum bool, network string) bool {
+	// 1. Fast filter: Check pattern on raw address
 	// We want to avoid expensive checksum calculation if the basic letters don't match
 
 	// Handle 0x prefix for string checking
@@ -560,43 +561,71 @@ func matchesCriteria(address, prefix, suffix string, isChecksum bool) bool {
 		addrWithoutPrefix = address[2:]
 	}
 
-	// Check prefix (case-insensitive)
+	// Determine matching mode based on network
+	// Ethereum is case-insensitive by default (unless checksum is checked later)
+	// Bitcoin and Solana are case-sensitive (Base58)
+	caseSensitive := network == "bitcoin" || network == "solana"
+
+	// Check prefix
 	if prefix != "" {
 		if len(addrWithoutPrefix) < len(prefix) {
 			return false
 		}
 		prefixPart := addrWithoutPrefix[:len(prefix)]
-		if !strings.EqualFold(prefixPart, prefix) {
+
+		match := false
+		if caseSensitive {
+			match = prefixPart == prefix
+		} else {
+			match = strings.EqualFold(prefixPart, prefix)
+		}
+
+		if !match {
 			if os.Getenv("BLOCO_DEBUG") != "" {
-				fmt.Printf("DEBUG: Prefix check failed: %q does not start with %q\n",
-					prefixPart, prefix)
+				fmt.Printf("DEBUG: Prefix check failed: %q does not start with %q (case-sensitive: %v)\n",
+					prefixPart, prefix, caseSensitive)
 			}
 			return false
 		}
 	}
 
-	// Check suffix (case-insensitive)
+	// Check suffix
 	if suffix != "" {
 		if len(addrWithoutPrefix) < len(suffix) {
 			return false
 		}
 		suffixPart := addrWithoutPrefix[len(addrWithoutPrefix)-len(suffix):]
-		if !strings.EqualFold(suffixPart, suffix) {
+
+		match := false
+		if caseSensitive {
+			match = suffixPart == suffix
+		} else {
+			match = strings.EqualFold(suffixPart, suffix)
+		}
+
+		if !match {
 			if os.Getenv("BLOCO_DEBUG") != "" {
-				fmt.Printf("DEBUG: Suffix check failed: %q does not end with %q\n",
-					suffixPart, suffix)
+				fmt.Printf("DEBUG: Suffix check failed: %q does not end with %q (case-sensitive: %v)\n",
+					suffixPart, suffix, caseSensitive)
 			}
 			return false
 		}
 	}
 
 	// 2. If pattern matches, AND checksum is required, then calculate/verify checksum
+	// Note: For Bitcoin/Solana, case sensitivity is already handled above, so isChecksum mainly implies
+	// strict validation if applicable, but for Ethereum it triggers EIP-55 check.
 	if isChecksum && (prefix != "" || suffix != "") {
-		result := isEIP55Checksum(address, prefix, suffix)
-		if os.Getenv("BLOCO_DEBUG") != "" {
-			fmt.Printf("DEBUG: EIP55 validation result: %v\n", result)
+		// Only Ethereum uses EIP-55 mixed-case checksum
+		if network == "ethereum" || network == "" {
+			result := isEIP55Checksum(address, prefix, suffix)
+			if os.Getenv("BLOCO_DEBUG") != "" {
+				fmt.Printf("DEBUG: EIP55 validation result: %v\n", result)
+			}
+			return result
 		}
-		return result
+		// For other networks, we already did case-sensitive check, so we are good
+		return true
 	}
 
 	if os.Getenv("BLOCO_DEBUG") != "" {
