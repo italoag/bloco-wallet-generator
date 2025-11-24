@@ -39,7 +39,7 @@ func TestNewKeyStoreV3(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ks := NewKeyStoreV3(tt.address)
+			ks := NewKeyStoreV3(tt.address, "ethereum")
 
 			if ks.Address != tt.expected {
 				t.Errorf("Expected address %s, got %s", tt.expected, ks.Address)
@@ -70,7 +70,7 @@ func TestNewKeyStoreV3(t *testing.T) {
 }
 
 func TestKeyStoreV3_SetScryptParams(t *testing.T) {
-	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 	salt := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 
 	ks.SetScryptParams(262144, 8, 1, 32, salt)
@@ -107,7 +107,7 @@ func TestKeyStoreV3_SetScryptParams(t *testing.T) {
 }
 
 func TestKeyStoreV3_SetPBKDF2Params(t *testing.T) {
-	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 	salt := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 
 	ks.SetPBKDF2Params(262144, 32, "hmac-sha256", salt)
@@ -140,7 +140,7 @@ func TestKeyStoreV3_SetPBKDF2Params(t *testing.T) {
 }
 
 func TestKeyStoreV3_SetCipherParams(t *testing.T) {
-	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 	iv := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 	ciphertext := []byte{0xde, 0xad, 0xbe, 0xef}
 
@@ -158,7 +158,7 @@ func TestKeyStoreV3_SetCipherParams(t *testing.T) {
 }
 
 func TestKeyStoreV3_SetMAC(t *testing.T) {
-	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 	mac := []byte{0xca, 0xfe, 0xba, 0xbe}
 
 	ks.SetMAC(mac)
@@ -213,7 +213,7 @@ func TestKeyStoreV3_Validate(t *testing.T) {
 		{
 			name: "valid keystore",
 			setupFunc: func() *KeyStoreV3 {
-				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 				ks.SetScryptParams(262144, 8, 1, 32, []byte{1, 2, 3, 4})
 				ks.SetCipherParams([]byte{1, 2, 3, 4}, []byte{5, 6, 7, 8})
 				ks.SetMAC([]byte{9, 10, 11, 12})
@@ -224,27 +224,18 @@ func TestKeyStoreV3_Validate(t *testing.T) {
 		{
 			name: "empty address",
 			setupFunc: func() *KeyStoreV3 {
-				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 				ks.Address = ""
 				return ks
 			},
 			wantError: true,
 			errorMsg:  "address cannot be empty",
 		},
-		{
-			name: "invalid address length",
-			setupFunc: func() *KeyStoreV3 {
-				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
-				ks.Address = "1234"
-				return ks
-			},
-			wantError: true,
-			errorMsg:  "address must be 40 characters long",
-		},
+
 		{
 			name: "invalid version",
 			setupFunc: func() *KeyStoreV3 {
-				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 				ks.Version = 2
 				return ks
 			},
@@ -254,7 +245,7 @@ func TestKeyStoreV3_Validate(t *testing.T) {
 		{
 			name: "empty ID",
 			setupFunc: func() *KeyStoreV3 {
-				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 				ks.ID = ""
 				return ks
 			},
@@ -264,7 +255,7 @@ func TestKeyStoreV3_Validate(t *testing.T) {
 		{
 			name: "unsupported cipher",
 			setupFunc: func() *KeyStoreV3 {
-				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 				ks.Crypto.Cipher = "aes-256-cbc"
 				return ks
 			},
@@ -274,7 +265,7 @@ func TestKeyStoreV3_Validate(t *testing.T) {
 		{
 			name: "unsupported KDF",
 			setupFunc: func() *KeyStoreV3 {
-				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 				ks.Crypto.KDF = "bcrypt"
 				return ks
 			},
@@ -284,7 +275,7 @@ func TestKeyStoreV3_Validate(t *testing.T) {
 		{
 			name: "empty ciphertext",
 			setupFunc: func() *KeyStoreV3 {
-				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 				ks.SetScryptParams(262144, 8, 1, 32, []byte{1, 2, 3, 4})
 				ks.SetCipherParams([]byte{1, 2, 3, 4}, []byte{})
 				return ks
@@ -295,7 +286,7 @@ func TestKeyStoreV3_Validate(t *testing.T) {
 		{
 			name: "empty MAC",
 			setupFunc: func() *KeyStoreV3 {
-				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 				ks.SetScryptParams(262144, 8, 1, 32, []byte{1, 2, 3, 4})
 				ks.SetCipherParams([]byte{1, 2, 3, 4}, []byte{5, 6, 7, 8})
 				return ks
@@ -306,7 +297,7 @@ func TestKeyStoreV3_Validate(t *testing.T) {
 		{
 			name: "empty IV",
 			setupFunc: func() *KeyStoreV3 {
-				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 				ks.SetScryptParams(262144, 8, 1, 32, []byte{1, 2, 3, 4})
 				ks.Crypto.CipherText = "deadbeef"
 				ks.SetMAC([]byte{9, 10, 11, 12})
@@ -318,7 +309,7 @@ func TestKeyStoreV3_Validate(t *testing.T) {
 		{
 			name: "nil KDF params",
 			setupFunc: func() *KeyStoreV3 {
-				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+				ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 				ks.Crypto.KDFParams = nil
 				ks.SetCipherParams([]byte{1, 2, 3, 4}, []byte{5, 6, 7, 8})
 				ks.SetMAC([]byte{9, 10, 11, 12})
@@ -351,7 +342,7 @@ func TestKeyStoreV3_Validate(t *testing.T) {
 
 func TestKeyStoreV3_JSONSerialization(t *testing.T) {
 	// Create a complete keystore
-	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 	salt := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 	iv := []byte{16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}
 	ciphertext := []byte{0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe}
@@ -424,7 +415,7 @@ func TestKeyStoreV3_JSONSerialization(t *testing.T) {
 
 func TestKeyStoreV3_JSONSerializationWithPBKDF2(t *testing.T) {
 	// Create a keystore with PBKDF2
-	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 	salt := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 	iv := []byte{16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}
 	ciphertext := []byte{0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe}
@@ -481,11 +472,6 @@ func TestFromJSON_InvalidJSON(t *testing.T) {
 			jsonData: `{"address": "1234567890abcdef1234567890abcdef12345678"}`,
 			wantErr:  true,
 		},
-		{
-			name:     "invalid address length",
-			jsonData: `{"address": "1234", "version": 3, "id": "test", "crypto": {"cipher": "aes-128-ctr", "kdf": "scrypt", "ciphertext": "test", "mac": "test", "cipherparams": {"iv": "test"}, "kdfparams": {"n": 1, "r": 1, "p": 1, "dklen": 32, "salt": "test"}}}`,
-			wantErr:  true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -499,7 +485,7 @@ func TestFromJSON_InvalidJSON(t *testing.T) {
 }
 
 func TestKeyStoreV3_GetParams_WrongKDF(t *testing.T) {
-	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678")
+	ks := NewKeyStoreV3("0x1234567890abcdef1234567890abcdef12345678", "ethereum")
 
 	// Test getting scrypt params when KDF is scrypt (should work)
 	ks.SetScryptParams(262144, 8, 1, 32, []byte{1, 2, 3, 4})
@@ -1353,7 +1339,7 @@ func TestKeyStoreService_GenerateKeyStore(t *testing.T) {
 			}
 			service := NewKeyStoreService(config)
 
-			keystore, password, err := service.GenerateKeyStore(tt.privateKey, tt.address)
+			keystore, password, err := service.GenerateKeyStore(tt.privateKey, tt.address, "ethereum")
 
 			if tt.expectError {
 				if err == nil {
@@ -1466,7 +1452,7 @@ func TestKeyStoreService_SaveKeyStoreFiles(t *testing.T) {
 			keystore:    createValidKeyStore("1234567890abcdef1234567890abcdef12345678"),
 			password:    "TestPassword123!",
 			expectError: true,
-			errorMsg:    "invalid address length",
+			errorMsg:    "invalid Ethereum address length",
 		},
 	}
 
@@ -1479,7 +1465,7 @@ func TestKeyStoreService_SaveKeyStoreFiles(t *testing.T) {
 			}
 			service := NewKeyStoreService(config)
 
-			err := service.SaveKeyStoreFilesToDisk(tt.address, tt.keystore, tt.password)
+			err := service.SaveKeyStoreFilesToDisk(tt.address, tt.keystore, tt.password, "ethereum", "")
 
 			if tt.expectError {
 				if err == nil {
@@ -1561,7 +1547,7 @@ func TestKeyStoreService_SaveMnemonicFile(t *testing.T) {
 	t.Run("successfully saves mnemonic file", func(t *testing.T) {
 		service := NewKeyStoreService(KeyStoreConfig{Enabled: true, OutputDirectory: tempDir, KDF: "scrypt"})
 
-		if err := service.SaveMnemonicFile(validAddress, mnemonic); err != nil {
+		if err := service.SaveMnemonicFile(validAddress, mnemonic, "ethereum"); err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
 
@@ -1590,7 +1576,7 @@ func TestKeyStoreService_SaveMnemonicFile(t *testing.T) {
 	t.Run("fails when service disabled", func(t *testing.T) {
 		service := NewKeyStoreService(KeyStoreConfig{Enabled: false, OutputDirectory: tempDir, KDF: "scrypt"})
 
-		err := service.SaveMnemonicFile(validAddress, mnemonic)
+		err := service.SaveMnemonicFile(validAddress, mnemonic, "ethereum")
 		if err == nil || !strings.Contains(err.Error(), "keystore generation is disabled") {
 			t.Fatalf("Expected disabled service error, got %v", err)
 		}
@@ -1599,7 +1585,7 @@ func TestKeyStoreService_SaveMnemonicFile(t *testing.T) {
 	t.Run("fails with empty mnemonic", func(t *testing.T) {
 		service := NewKeyStoreService(KeyStoreConfig{Enabled: true, OutputDirectory: tempDir, KDF: "scrypt"})
 
-		err := service.SaveMnemonicFile(validAddress, "")
+		err := service.SaveMnemonicFile(validAddress, "", "ethereum")
 		if err == nil || !strings.Contains(err.Error(), "mnemonic cannot be empty") {
 			t.Fatalf("Expected empty mnemonic error, got %v", err)
 		}
@@ -1608,8 +1594,8 @@ func TestKeyStoreService_SaveMnemonicFile(t *testing.T) {
 	t.Run("fails with invalid address", func(t *testing.T) {
 		service := NewKeyStoreService(KeyStoreConfig{Enabled: true, OutputDirectory: tempDir, KDF: "scrypt"})
 
-		err := service.SaveMnemonicFile("0x1234", mnemonic)
-		if err == nil || !strings.Contains(err.Error(), "invalid address length") {
+		err := service.SaveMnemonicFile("0x1234", mnemonic, "ethereum")
+		if err == nil || (!strings.Contains(err.Error(), "invalid address length") && !strings.Contains(err.Error(), "invalid Ethereum address length")) {
 			t.Fatalf("Expected invalid address error, got %v", err)
 		}
 	})
@@ -1686,13 +1672,13 @@ func TestKeyStoreService_EndToEndWorkflow(t *testing.T) {
 			address := "0x1234567890abcdef1234567890abcdef12345678"
 
 			// Generate keystore
-			keystore, password, err := service.GenerateKeyStore(privateKey, address)
+			keystore, password, err := service.GenerateKeyStore(privateKey, address, "ethereum")
 			if err != nil {
 				t.Fatalf("GenerateKeyStore failed: %v", err)
 			}
 
 			// Save files
-			err = service.SaveKeyStoreFilesToDisk(address, keystore, password)
+			err = service.SaveKeyStoreFilesToDisk(address, keystore, password, "ethereum", privateKey)
 			if err != nil {
 				t.Fatalf("SaveKeyStoreFiles failed: %v", err)
 			}
@@ -1743,7 +1729,7 @@ func TestKeyStoreService_EndToEndWorkflow(t *testing.T) {
 
 // Helper function to create a valid keystore for testing
 func createValidKeyStore(address string) *KeyStoreV3 {
-	ks := NewKeyStoreV3(address)
+	ks := NewKeyStoreV3(address, "ethereum")
 
 	// Set some dummy but valid crypto parameters
 	ks.SetScryptParams(262144, 8, 1, 32, []byte("test-salt-32-bytes-long-for-test"))
@@ -2148,17 +2134,12 @@ func TestKeyStoreService_GetFilePaths(t *testing.T) {
 			wantMnemonicPath: "/test/dir/0x1234567890abcdef1234567890abcdef12345678.mnemonic",
 			wantError:        false,
 		},
-		{
-			name:      "invalid address length",
-			address:   "0x1234",
-			wantError: true,
-			errorMsg:  "invalid address length",
-		},
+
 		{
 			name:      "empty address",
 			address:   "",
 			wantError: true,
-			errorMsg:  "invalid address length",
+			errorMsg:  "address cannot be empty",
 		},
 	}
 
@@ -2373,14 +2354,14 @@ func TestKeyStoreService_SaveKeyStoreFiles_EnhancedErrorHandling(t *testing.T) {
 
 	// Create a valid keystore for testing
 	address := "1234567890abcdef1234567890abcdef12345678"
-	keystore := NewKeyStoreV3("0x" + address)
+	keystore := NewKeyStoreV3("0x"+address, "ethereum")
 	keystore.SetScryptParams(262144, 8, 1, 32, []byte("testsalt"))
 	keystore.SetCipherParams([]byte("testiv1234567890"), []byte("testciphertext"))
 	keystore.SetMAC([]byte("testmac"))
 	password := "TestPassword123!"
 
 	// Test successful save
-	err := service.SaveKeyStoreFilesToDisk(address, keystore, password)
+	err := service.SaveKeyStoreFilesToDisk(address, keystore, password, "ethereum", "")
 	if err != nil {
 		t.Errorf("Expected no error but got: %v", err)
 	}
@@ -2402,7 +2383,7 @@ func TestKeyStoreService_SaveKeyStoreFiles_EnhancedErrorHandling(t *testing.T) {
 	}
 
 	// Test overwriting existing files
-	err = service.SaveKeyStoreFilesToDisk(address, keystore, password)
+	err = service.SaveKeyStoreFilesToDisk(address, keystore, password, "ethereum", "")
 	if err != nil {
 		t.Errorf("Expected no error when overwriting files but got: %v", err)
 	}
@@ -2556,7 +2537,7 @@ func TestKeyStoreServiceRetryMechanism(t *testing.T) {
 			}
 
 			// Test the retry mechanism
-			err := service.SaveKeyStoreFilesWithRetry(tt.privateKey, tt.address)
+			err := service.SaveKeyStoreFilesWithRetry(tt.privateKey, tt.address, "ethereum")
 
 			if tt.expectSuccess && err != nil {
 				t.Errorf("Expected success but got error: %v", err)
@@ -2614,7 +2595,7 @@ func TestKeyStoreServiceProgressLogging(t *testing.T) {
 	address := "0x1234567890abcdef1234567890abcdef12345678"
 
 	// Test successful operation
-	err := service.SaveKeyStoreFiles(privateKey, address)
+	err := service.SaveKeyStoreFiles(privateKey, address, "ethereum")
 	if err != nil {
 		t.Fatalf("SaveKeyStoreFiles failed: %v", err)
 	}
@@ -2639,7 +2620,7 @@ func TestKeyStoreServiceProgressLogging(t *testing.T) {
 	privateKey2 := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	address2 := "0xabcdef1234567890abcdef1234567890abcdef12"
 
-	err = service.SaveKeyStoreFiles(privateKey2, address2)
+	err = service.SaveKeyStoreFiles(privateKey2, address2, "ethereum")
 	if err != nil {
 		t.Fatalf("SaveKeyStoreFiles failed: %v", err)
 	}
@@ -2668,7 +2649,7 @@ func TestKeyStoreServiceIntegrationWithGeth(t *testing.T) {
 	address := "0x1234567890abcdef1234567890abcdef12345678"
 
 	// Generate keystore
-	err := service.SaveKeyStoreFiles(privateKey, address)
+	err := service.SaveKeyStoreFiles(privateKey, address, "ethereum")
 	if err != nil {
 		t.Fatalf("SaveKeyStoreFiles failed: %v", err)
 	}
@@ -2749,7 +2730,7 @@ func TestKeyStoreServicePerformanceBenchmark(t *testing.T) {
 		privateKey := fmt.Sprintf("%064d", i) // Generate different private keys
 		address := fmt.Sprintf("0x%040d", i)  // Generate different addresses
 
-		err := service.SaveKeyStoreFiles(privateKey, address)
+		err := service.SaveKeyStoreFiles(privateKey, address, "ethereum")
 		if err != nil {
 			t.Fatalf("SaveKeyStoreFiles failed on iteration %d: %v", i, err)
 		}

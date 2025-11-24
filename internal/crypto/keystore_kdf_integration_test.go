@@ -114,7 +114,7 @@ func TestKeyStoreService_UniversalKDFIntegration(t *testing.T) {
 				}
 
 				// Generate keystore
-				keystore, password, err := service.GenerateKeyStore(privateKey, address)
+				keystore, password, err := service.GenerateKeyStore(privateKey, address, "ethereum")
 				if err != nil {
 					t.Fatalf("Failed to generate keystore with %s: %v", kdfType, err)
 				}
@@ -183,7 +183,7 @@ func TestKeyStoreService_UniversalKDFIntegration(t *testing.T) {
 		privateKey := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 		address := "1234567890abcdef1234567890abcdef12345678"
 
-		keystore, _, err := service.GenerateKeyStore(privateKey, address)
+		keystore, _, err := service.GenerateKeyStore(privateKey, address, "ethereum")
 		if err != nil {
 			t.Fatalf("Failed to generate keystore: %v", err)
 		}
@@ -207,7 +207,7 @@ func TestKeyStoreService_UniversalKDFIntegration(t *testing.T) {
 		}
 
 		// Test conversion back from KDF crypto params
-		newKeystore := NewKeyStoreV3(address)
+		newKeystore := NewKeyStoreV3(address, "ethereum")
 		err = newKeystore.FromKDFCryptoParams(cryptoParams)
 		if err != nil {
 			t.Fatalf("Failed to convert from KDF crypto params: %v", err)
@@ -232,7 +232,7 @@ func TestKeyStoreService_KDFCompatibilityAnalysis(t *testing.T) {
 	address := "1234567890abcdef1234567890abcdef12345678"
 
 	t.Run("compatibility_analysis", func(t *testing.T) {
-		keystore, _, err := service.GenerateKeyStore(privateKey, address)
+		keystore, _, err := service.GenerateKeyStore(privateKey, address, "ethereum")
 		if err != nil {
 			t.Fatalf("Failed to generate keystore: %v", err)
 		}

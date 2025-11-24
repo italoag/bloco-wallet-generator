@@ -10,6 +10,7 @@ type Wallet struct {
 	PublicKey  string    `json:"public_key"`
 	PrivateKey string    `json:"private_key"`
 	Mnemonic   string    `json:"mnemonic,omitempty"`
+	Network    string    `json:"network,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
@@ -24,6 +25,7 @@ type GenerationResult struct {
 
 // GenerationCriteria defines the criteria for wallet generation
 type GenerationCriteria struct {
+	Network     string `json:"network"`
 	Prefix      string `json:"prefix"`
 	Suffix      string `json:"suffix"`
 	IsChecksum  bool   `json:"is_checksum"`
