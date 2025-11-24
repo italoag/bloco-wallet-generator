@@ -690,3 +690,67 @@ func TestBugRootCause(t *testing.T) {
 		t.Logf("BUG: The function should only require case-insensitive pattern match")
 	})
 }
+
+// TestMatchesCriteria_CaseSensitivity verifies that case sensitivity is handled correctly for different networks
+func TestMatchesCriteria_CaseSensitivity(t *testing.T) {
+	tests := []struct {
+		name       string
+		address    string
+		prefix     string
+		suffix     string
+		isChecksum bool
+		network    string
+		want       bool
+	}{
+		// Ethereum (Hex) - Case insensitive by default (unless checksum matched)
+		{
+			name:       "ETH: Case insensitive match",
+			address:    "0xAbC123...",
+			prefix:     "abc",
+			suffix:     "",
+			isChecksum: false,
+			network:    "ethereum",
+			want:       true, // Should match because ETH is case-insensitive for search
+		},
+		// Solana (Base58) - Case sensitive
+		{
+			name:       "SOL: Case mismatch should fail",
+			address:    "AbC123...",
+			prefix:     "abc", // User asked for lowercase
+			suffix:     "",
+			isChecksum: false,
+			network:    "solana",
+			want:       false, // Should FAIL because 'a' != 'A' in Base58
+		},
+		{
+			name:       "SOL: Exact match should pass",
+			address:    "AbC123...",
+			prefix:     "AbC",
+			suffix:     "",
+			isChecksum: false,
+			network:    "solana",
+			want:       true,
+		},
+		// Bitcoin (Base58) - Case sensitive
+		{
+			name:       "BTC: Case mismatch should fail",
+			address:    "1AbC...",
+			prefix:     "1abc",
+			suffix:     "",
+			isChecksum: false,
+			network:    "bitcoin",
+			want:       false, // Should FAIL
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Updated signature: matchesCriteria(address, prefix, suffix, isChecksum, network)
+			got := matchesCriteria(tt.address, tt.prefix, tt.suffix, tt.isChecksum, tt.network)
+
+			if got != tt.want {
+				t.Errorf("matchesCriteria() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
