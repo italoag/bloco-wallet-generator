@@ -315,13 +315,13 @@ func BenchmarkIsValidBlocoAddress(b *testing.B) {
 
 	b.Run("NoChecksum", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			matchesCriteria(address, prefix, suffix, false)
+			matchesCriteria(address, prefix, suffix, false, "ethereum")
 		}
 	})
 
 	b.Run("WithChecksum", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			matchesCriteria(address, prefix, suffix, true)
+			matchesCriteria(address, prefix, suffix, true, "ethereum")
 		}
 	})
 
@@ -329,7 +329,7 @@ func BenchmarkIsValidBlocoAddress(b *testing.B) {
 		// Address that doesn't match prefix, so optimization should skip checksum
 		badPrefix := "FF"
 		for i := 0; i < b.N; i++ {
-			matchesCriteria(address, badPrefix, suffix, true)
+			matchesCriteria(address, badPrefix, suffix, true, "ethereum")
 		}
 	})
 }
