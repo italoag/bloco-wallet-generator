@@ -39,7 +39,7 @@ func TestNewPool(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pool := NewPool(tt.threadCount)
+			pool := NewPool(tt.threadCount, "ethereum")
 
 			if pool == nil {
 				t.Fatal("NewPool() returned nil")
@@ -61,7 +61,7 @@ func TestNewPool(t *testing.T) {
 }
 
 func TestPool_StartShutdown(t *testing.T) {
-	pool := NewPool(2)
+	pool := NewPool(2, "ethereum")
 
 	// Test initial state
 	if pool.isRunning {
@@ -90,7 +90,7 @@ func TestPool_StartShutdown(t *testing.T) {
 }
 
 func TestPool_GetStatsCollector(t *testing.T) {
-	pool := NewPool(2)
+	pool := NewPool(2, "ethereum")
 
 	collector := pool.GetStatsCollector()
 	if collector == nil {
@@ -103,7 +103,7 @@ func TestPool_GenerateWalletWithContext_SimplePattern(t *testing.T) {
 		t.Skip("Skipping wallet generation test in short mode")
 	}
 
-	pool := NewPool(2)
+	pool := NewPool(2, "ethereum")
 	err := pool.Start()
 	if err != nil {
 		t.Fatalf("Failed to start pool: %v", err)
@@ -162,7 +162,7 @@ func TestPool_GenerateWalletWithContext_SimplePattern(t *testing.T) {
 }
 
 func TestPool_GenerateWalletWithContext_Mnemonic(t *testing.T) {
-	pool := NewPool(1)
+	pool := NewPool(1, "ethereum")
 	if err := pool.Start(); err != nil {
 		t.Fatalf("Failed to start pool: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestPool_GenerateWalletWithContext_Mnemonic(t *testing.T) {
 }
 
 func TestPool_GenerateWalletWithContext_Cancellation(t *testing.T) {
-	pool := NewPool(1)
+	pool := NewPool(1, "ethereum")
 	err := pool.Start()
 	if err != nil {
 		t.Fatalf("Failed to start pool: %v", err)
@@ -244,7 +244,7 @@ func TestPool_GenerateWalletWithContext_MultipleWorkers(t *testing.T) {
 
 	for _, threads := range threadCounts {
 		t.Run(fmt.Sprintf("threads_%d", threads), func(t *testing.T) {
-			pool := NewPool(threads)
+			pool := NewPool(threads, "ethereum")
 			err := pool.Start()
 			if err != nil {
 				t.Fatalf("Failed to start pool: %v", err)
@@ -276,7 +276,7 @@ func TestPool_GenerateWalletWithContext_MultipleWorkers(t *testing.T) {
 }
 
 func TestPool_GenerateWalletWithContext_InvalidCriteria(t *testing.T) {
-	pool := NewPool(2)
+	pool := NewPool(2, "ethereum")
 	err := pool.Start()
 	if err != nil {
 		t.Fatalf("Failed to start pool: %v", err)

@@ -20,7 +20,7 @@ func TestPool_SecureLoggingIntegration(t *testing.T) {
 	cfg.Logging.OutputFile = "" // Use stdout for testing
 
 	// Create pool with secure logging
-	pool := NewPoolWithConfig(2, cfg)
+	pool := NewPoolWithConfig(2, cfg, "ethereum")
 	defer func() { _ = pool.Shutdown() }()
 
 	// Start the pool
@@ -75,7 +75,7 @@ func TestPool_SecureLoggingDisabled(t *testing.T) {
 	cfg.Logging.Enabled = false
 
 	// Create pool with disabled logging
-	pool := NewPoolWithConfig(1, cfg)
+	pool := NewPoolWithConfig(1, cfg, "ethereum")
 	defer func() { _ = pool.Shutdown() }()
 
 	// Start the pool
@@ -133,7 +133,7 @@ func TestPool_SecureLoggingErrorHandling(t *testing.T) {
 	cfg.Logging.OutputFile = "" // Use stdout for testing
 
 	// Create pool with secure logging
-	pool := NewPoolWithConfig(1, cfg)
+	pool := NewPoolWithConfig(1, cfg, "ethereum")
 	defer func() { _ = pool.Shutdown() }()
 
 	// Start the pool
@@ -172,7 +172,7 @@ func TestPool_SecureLoggingErrorHandling(t *testing.T) {
 // TestPool_BackwardCompatibility tests that the old NewPool function still works
 func TestPool_BackwardCompatibility(t *testing.T) {
 	// Test that the old NewPool function still works
-	pool := NewPool(2)
+	pool := NewPool(2, "ethereum")
 	defer func() { _ = pool.Shutdown() }()
 
 	// Verify pool was created successfully

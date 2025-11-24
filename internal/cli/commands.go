@@ -85,6 +85,7 @@ func (app *Application) addGlobalFlags() {
 	flags.Bool("case-sensitive", false, "Enable case-sensitive pattern matching (requires --checksum)")
 	flags.IntP("count", "n", 1, "Number of wallets to generate")
 	flags.Bool("with-mnemonic", false, "Generate wallets using BIP-39 mnemonic phrases")
+	flags.String("network", "ethereum", "Target network (ethereum, bitcoin, solana)")
 
 	// Performance parameters
 	flags.IntP("threads", "t", 0, "Number of worker threads (0 = auto-detect)")
@@ -116,9 +117,9 @@ func (app *Application) addGlobalFlags() {
 }
 
 // createWorkerPool creates an optimized worker pool with secure logging
-func (app *Application) createWorkerPool(poolManager *crypto.PoolManager, validator *validation.AddressValidator) (worker.WorkerPool, error) {
+func (app *Application) createWorkerPool(poolManager *crypto.PoolManager, validator *validation.AddressValidator, network string) (worker.WorkerPool, error) {
 	// Create worker pool with configuration that includes logging settings
-	pool := worker.NewPoolWithConfig(app.config.Worker.ThreadCount, app.config)
+	pool := worker.NewPoolWithConfig(app.config.Worker.ThreadCount, app.config, network)
 	return pool, nil
 }
 
@@ -148,7 +149,7 @@ func (app *Application) generateWallet(cmd *cobra.Command, args []string) error 
 	validator := validation.NewAddressValidator(checksumValidator)
 
 	// Create optimized worker pool using ants
-	workerPool, err := app.createWorkerPool(poolManager, validator)
+	workerPool, err := app.createWorkerPool(poolManager, validator, criteria.Network)
 	if err != nil {
 		return err
 	}
@@ -872,7 +873,7 @@ func (app *Application) runBenchmark(cmd *cobra.Command, args []string) error {
 // runBenchmarkTUI runs benchmark with TUI interface
 func (app *Application) runBenchmarkTUI(ctx context.Context, attempts int, duration time.Duration, detailed bool) error {
 	// Create worker pool
-	workerPool := worker.NewPool(app.config.Worker.ThreadCount)
+	workerPool := worker.NewPool(app.config.Worker.ThreadCount, "ethereum")
 
 	// Start worker pool
 	if err := workerPool.Start(); err != nil {
@@ -926,7 +927,7 @@ func (app *Application) runBenchmarkText(ctx context.Context, attempts int, dura
 	fmt.Printf("Threads: %d\n\n", app.config.Worker.ThreadCount)
 
 	// Create worker pool
-	workerPool := worker.NewPool(app.config.Worker.ThreadCount)
+	workerPool := worker.NewPool(app.config.Worker.ThreadCount, "ethereum")
 
 	// Start worker pool
 	if err := workerPool.Start(); err != nil {
@@ -1354,8 +1355,10 @@ func (app *Application) getGenerationCriteria(cmd *cobra.Command) (wallet.Genera
 	suffix, _ := cmd.Flags().GetString("suffix")
 	checksum, _ := cmd.Flags().GetBool("checksum")
 	useMnemonic, _ := cmd.Flags().GetBool("with-mnemonic")
+	network, _ := cmd.Flags().GetString("network")
 
 	criteria := wallet.GenerationCriteria{
+		Network:     network,
 		Prefix:      prefix,
 		Suffix:      suffix,
 		IsChecksum:  checksum,
@@ -1943,7 +1946,37 @@ func (app *Application) generateAndSaveKeystore(w *wallet.Wallet) error {
 }
 
 // generateAndSaveKeystoreWithVerbose generates and saves a keystore file with verbose control
+// For Bitcoin: only saves mnemonic (no KeyStore V3)
+// For Ethereum and Solana: generates KeyStore V3 or network-specific format
 func (app *Application) generateAndSaveKeystoreWithVerbose(w *wallet.Wallet, verbose bool) error {
+	// Bitcoin only saves mnemonic, no KeyStore V3
+	if strings.ToLower(w.Network) == "bitcoin" {
+		if w.Mnemonic == "" {
+			return fmt.Errorf("Bitcoin wallet requires mnemonic for backup")
+		}
+
+		// Create keystore service just for saving mnemonic
+		keystoreConfig := crypto.KeyStoreConfig{
+			Enabled:         app.config.KeyStore.Enabled,
+			OutputDirectory: app.config.KeyStore.OutputDir,
+		}
+		keystoreService := crypto.NewKeyStoreService(keystoreConfig)
+		keystoreService.SetVerboseMode(verbose)
+
+		// Save only the mnemonic for Bitcoin
+		if err := keystoreService.SaveMnemonicFile(w.Address, w.Mnemonic, w.Network); err != nil {
+			if ksErr, ok := err.(*crypto.KeyStoreError); ok {
+				if ksErr.UserMessage != "" {
+					return fmt.Errorf("mnemonic save failed: %s", ksErr.UserMessage)
+				}
+				return fmt.Errorf("mnemonic save failed for address %s: %v", w.Address, err)
+			}
+			return fmt.Errorf("failed to save mnemonic file for address %s: %w", w.Address, err)
+		}
+		return nil
+	}
+
+	// For Ethereum and Solana: generate KeyStore V3 or network-specific format
 	// Create Universal KDF service for enhanced compatibility
 	kdfService := kdf.NewUniversalKDFService()
 
@@ -1978,7 +2011,7 @@ func (app *Application) generateAndSaveKeystoreWithVerbose(w *wallet.Wallet, ver
 	keystoreService.SetVerboseMode(verbose)
 
 	// Generate keystore first to get complete parameters
-	keystore, password, err := keystoreService.GenerateKeyStore(w.PrivateKey, w.Address)
+	keystore, password, err := keystoreService.GenerateKeyStore(w.PrivateKey, w.Address, w.Network)
 	if err != nil {
 		return fmt.Errorf("failed to generate keystore for address %s: %w", w.Address, err)
 	}
@@ -2004,7 +2037,7 @@ func (app *Application) generateAndSaveKeystoreWithVerbose(w *wallet.Wallet, ver
 	}
 
 	// Save the generated keystore
-	if err := keystoreService.SaveKeyStoreFilesToDisk(w.Address, keystore, password); err != nil {
+	if err := keystoreService.SaveKeyStoreFilesToDisk(w.Address, keystore, password, w.Network, w.PrivateKey); err != nil {
 		// Check if it's a KeyStoreError for better error reporting
 		if ksErr, ok := err.(*crypto.KeyStoreError); ok {
 			if ksErr.UserMessage != "" {
@@ -2016,7 +2049,7 @@ func (app *Application) generateAndSaveKeystoreWithVerbose(w *wallet.Wallet, ver
 	}
 
 	if w.Mnemonic != "" {
-		if err := keystoreService.SaveMnemonicFile(w.Address, w.Mnemonic); err != nil {
+		if err := keystoreService.SaveMnemonicFile(w.Address, w.Mnemonic, w.Network); err != nil {
 			if ksErr, ok := err.(*crypto.KeyStoreError); ok {
 				if ksErr.UserMessage != "" {
 					return fmt.Errorf("mnemonic save failed: %s", ksErr.UserMessage)

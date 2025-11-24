@@ -11,21 +11,22 @@ import (
 )
 
 // AddressGenerator handles Ethereum address generation
-type AddressGenerator struct {
+// EthereumGenerator handles Ethereum address generation
+type EthereumGenerator struct {
 	poolManager *PoolManager
 }
 
-// NewAddressGenerator creates a new address generator
-func NewAddressGenerator(poolManager *PoolManager) *AddressGenerator {
-	return &AddressGenerator{
+// NewEthereumGenerator creates a new address generator
+func NewEthereumGenerator(poolManager *PoolManager) *EthereumGenerator {
+	return &EthereumGenerator{
 		poolManager: poolManager,
 	}
 }
 
 // GenerateWallet generates a new wallet with private key and address
-func (ag *AddressGenerator) GenerateWallet() (*wallet.Wallet, error) {
+func (eg *EthereumGenerator) GenerateWallet() (*wallet.Wallet, error) {
 	// Get private key buffer from pool
-	cryptoPool := ag.poolManager.GetCryptoPool()
+	cryptoPool := eg.poolManager.GetCryptoPool()
 	privateKey := cryptoPool.GetPrivateKeyBuffer()
 	defer cryptoPool.PutPrivateKeyBuffer(privateKey)
 
@@ -37,7 +38,7 @@ func (ag *AddressGenerator) GenerateWallet() (*wallet.Wallet, error) {
 	}
 
 	// Generate address from private key
-	address, err := ag.PrivateKeyToAddress(privateKey)
+	address, err := eg.GenerateAddressFromPrivateKey(privateKey)
 	if err != nil {
 		return nil, errors.WrapError(err, errors.ErrorTypeCrypto,
 			"generate_wallet", "failed to generate address from private key")
@@ -49,15 +50,19 @@ func (ag *AddressGenerator) GenerateWallet() (*wallet.Wallet, error) {
 	}, nil
 }
 
-// PrivateKeyToAddress converts a private key to an Ethereum address
-func (ag *AddressGenerator) PrivateKeyToAddress(privateKey []byte) (string, error) {
+// GenerateAddressFromPrivateKey converts a private key to an Ethereum address
+func (eg *EthereumGenerator) GenerateAddressFromPrivateKey(privateKey []byte) (string, error) {
 	// Use the optimized generation logic to avoid code duplication and improve performance
-	return ag.OptimizedAddressGeneration(privateKey)
+	addr, err := eg.OptimizedAddressGeneration(privateKey)
+	if err != nil {
+		return "", err
+	}
+	return "0x" + addr, nil
 }
 
 // GeneratePrivateKey generates a cryptographically secure private key
-func (ag *AddressGenerator) GeneratePrivateKey() ([]byte, error) {
-	cryptoPool := ag.poolManager.GetCryptoPool()
+func (eg *EthereumGenerator) GeneratePrivateKey() ([]byte, error) {
+	cryptoPool := eg.poolManager.GetCryptoPool()
 	privateKey := cryptoPool.GetPrivateKeyBuffer()
 	defer cryptoPool.PutPrivateKeyBuffer(privateKey)
 
@@ -74,7 +79,7 @@ func (ag *AddressGenerator) GeneratePrivateKey() ([]byte, error) {
 }
 
 // ValidatePrivateKey validates that a private key is valid
-func (ag *AddressGenerator) ValidatePrivateKey(privateKey []byte) error {
+func (eg *EthereumGenerator) ValidatePrivateKey(privateKey []byte) error {
 	if len(privateKey) != 32 {
 		return errors.NewValidationError("validate_private_key",
 			"private key must be 32 bytes")
@@ -100,7 +105,7 @@ func (ag *AddressGenerator) ValidatePrivateKey(privateKey []byte) error {
 }
 
 // BatchGenerateWallets generates multiple wallets efficiently
-func (ag *AddressGenerator) BatchGenerateWallets(count int) ([]*wallet.Wallet, error) {
+func (eg *EthereumGenerator) BatchGenerateWallets(count int) ([]*wallet.Wallet, error) {
 	if count <= 0 {
 		return nil, errors.NewValidationError("batch_generate_wallets",
 			"count must be positive")
@@ -109,7 +114,7 @@ func (ag *AddressGenerator) BatchGenerateWallets(count int) ([]*wallet.Wallet, e
 	wallets := make([]*wallet.Wallet, 0, count)
 
 	for i := 0; i < count; i++ {
-		wallet, err := ag.GenerateWallet()
+		wallet, err := eg.GenerateWallet()
 		if err != nil {
 			return wallets, errors.WrapError(err, errors.ErrorTypeCrypto,
 				"batch_generate_wallets", "failed to generate wallet in batch")
@@ -121,7 +126,7 @@ func (ag *AddressGenerator) BatchGenerateWallets(count int) ([]*wallet.Wallet, e
 }
 
 // OptimizedAddressGeneration performs optimized address generation for high-throughput scenarios
-func (ag *AddressGenerator) OptimizedAddressGeneration(privateKey []byte) (string, error) {
+func (eg *EthereumGenerator) OptimizedAddressGeneration(privateKey []byte) (string, error) {
 	// This is a more optimized version that reuses objects more efficiently
 	// and minimizes allocations for high-performance scenarios
 
@@ -131,9 +136,9 @@ func (ag *AddressGenerator) OptimizedAddressGeneration(privateKey []byte) (strin
 	}
 
 	// Get objects from pools
-	cryptoPool := ag.poolManager.GetCryptoPool()
-	hasherPool := ag.poolManager.GetHasherPool()
-	bufferPool := ag.poolManager.GetBufferPool()
+	cryptoPool := eg.poolManager.GetCryptoPool()
+	hasherPool := eg.poolManager.GetHasherPool()
+	bufferPool := eg.poolManager.GetBufferPool()
 
 	privateKeyInt := cryptoPool.GetBigInt()
 	hasher := hasherPool.GetKeccak()
@@ -180,6 +185,6 @@ func (ag *AddressGenerator) OptimizedAddressGeneration(privateKey []byte) (strin
 }
 
 // GetPoolManager returns the pool manager (for testing and optimization)
-func (ag *AddressGenerator) GetPoolManager() *PoolManager {
-	return ag.poolManager
+func (eg *EthereumGenerator) GetPoolManager() *PoolManager {
+	return eg.poolManager
 }

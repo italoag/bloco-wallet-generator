@@ -648,7 +648,7 @@ func TestActualKeystoreGeneration(t *testing.T) {
 			service.config.KDF = tc.kdfType
 
 			// Generate keystore
-			keystore, password, err := service.GenerateKeyStore(privateKey, address)
+			keystore, password, err := service.GenerateKeyStore(privateKey, address, "ethereum")
 			if err != nil {
 				t.Fatalf("Failed to generate keystore: %v", err)
 			}

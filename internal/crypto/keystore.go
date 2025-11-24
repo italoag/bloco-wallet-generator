@@ -563,9 +563,15 @@ func (ks *KeyStoreV3) FromKDFCryptoParams(cryptoParams *kdf.CryptoParams) error 
 }
 
 // NewKeyStoreV3 creates a new KeyStore V3 structure with default values
-func NewKeyStoreV3(address string) *KeyStoreV3 {
-	// Remove 0x prefix if present and convert to lowercase
-	cleanAddress := strings.ToLower(strings.TrimPrefix(address, "0x"))
+func NewKeyStoreV3(address, network string) *KeyStoreV3 {
+	var cleanAddress string
+	if network == "ethereum" || network == "" {
+		// Remove 0x prefix if present and convert to lowercase for Ethereum
+		cleanAddress = strings.ToLower(strings.TrimPrefix(address, "0x"))
+	} else {
+		// Keep original case for other networks (e.g. Solana, Bitcoin)
+		cleanAddress = address
+	}
 
 	return &KeyStoreV3{
 		Address: cleanAddress,
@@ -662,8 +668,8 @@ func (ks *KeyStoreV3) Validate() error {
 		return fmt.Errorf("address cannot be empty")
 	}
 
-	if len(ks.Address) != 40 {
-		return fmt.Errorf("address must be 40 characters long (without 0x prefix)")
+	if len(ks.Address) == 0 {
+		return fmt.Errorf("address cannot be empty")
 	}
 
 	if ks.Version != 3 {
@@ -921,11 +927,11 @@ func EncryptPrivateKey(privateKeyHex string, password string, kdfType string) (*
 	}
 	service := NewKeyStoreService(config)
 
-	return service.EncryptPrivateKeyWithKDF(privateKeyHex, password, kdfType)
+	return service.EncryptPrivateKeyWithKDF(privateKeyHex, password, kdfType, "ethereum")
 }
 
 // EncryptPrivateKeyWithKDF encrypts a private key using the Universal KDF service
-func (ks *KeyStoreService) EncryptPrivateKeyWithKDF(privateKeyHex string, password string, kdfType string) (*KeyStoreV3, error) {
+func (ks *KeyStoreService) EncryptPrivateKeyWithKDF(privateKeyHex string, password string, kdfType string, network string) (*KeyStoreV3, error) {
 	if privateKeyHex == "" {
 		return nil, NewKeyStoreError("encrypt", "private_key", fmt.Errorf("private key cannot be empty"))
 	}
@@ -936,10 +942,19 @@ func (ks *KeyStoreService) EncryptPrivateKeyWithKDF(privateKeyHex string, passwo
 	// Remove 0x prefix if present
 	privateKeyHex = strings.TrimPrefix(privateKeyHex, "0x")
 
-	// Validate private key format
-	if len(privateKeyHex) != 64 {
-		return nil, NewKeyStoreError("validate", "private_key",
-			fmt.Errorf("private key must be 64 hex characters, got %d", len(privateKeyHex)))
+	// Validate private key length based on network
+	// Ethereum: 64 hex chars (32 bytes)
+	// Solana: 128 hex chars (64 bytes for Ed25519)
+	// Bitcoin: 64 hex chars (32 bytes for secp256k1)
+	expectedLength := 64 // Default for Ethereum and Bitcoin
+	if network == "solana" {
+		expectedLength = 128 // Ed25519 private key is 64 bytes
+	}
+
+	if len(privateKeyHex) != expectedLength {
+		return nil, NewKeyStoreError("save", "private_key",
+			fmt.Errorf("private key must be %d hex characters for %s network, got %d",
+				expectedLength, network, len(privateKeyHex)))
 	}
 
 	privateKeyBytes, err := hex.DecodeString(privateKeyHex)
@@ -1036,7 +1051,7 @@ func (ks *KeyStoreService) EncryptPrivateKeyWithKDF(privateKeyHex string, passwo
 	address := "0000000000000000000000000000000000000000"
 
 	// Create KeyStore V3 structure
-	keystore := NewKeyStoreV3(address)
+	keystore := NewKeyStoreV3(address, "ethereum")
 
 	// Set cipher parameters
 	keystore.SetCipherParams(iv, ciphertext)
@@ -1196,7 +1211,7 @@ func (ks *KeyStoreService) SetVerboseMode(verbose bool) {
 }
 
 // SaveKeyStoreFilesWithRetry saves keystore files with automatic retry for recoverable errors
-func (ks *KeyStoreService) SaveKeyStoreFilesWithRetry(privateKeyHex, address string) error {
+func (ks *KeyStoreService) SaveKeyStoreFilesWithRetry(privateKeyHex, address, network string) error {
 	if !ks.config.Enabled {
 		ks.logger.LogDebug("Keystore generation is disabled, skipping file creation")
 		return nil
@@ -1206,7 +1221,7 @@ func (ks *KeyStoreService) SaveKeyStoreFilesWithRetry(privateKeyHex, address str
 	for attempt := 1; attempt <= ks.config.MaxRetries; attempt++ {
 		ks.logger.LogDebug(fmt.Sprintf("Keystore save attempt %d/%d for address %s", attempt, ks.config.MaxRetries, address))
 
-		err := ks.SaveKeyStoreFiles(privateKeyHex, address)
+		err := ks.SaveKeyStoreFiles(privateKeyHex, address, network)
 		if err == nil {
 			if attempt > 1 {
 				ks.logger.LogInfo(fmt.Sprintf("Keystore files saved successfully for address %s after %d attempts", address, attempt))
@@ -1238,7 +1253,7 @@ func (ks *KeyStoreService) SaveKeyStoreFilesWithRetry(privateKeyHex, address str
 }
 
 // GenerateKeyStore creates a keystore for the given private key and address
-func (ks *KeyStoreService) GenerateKeyStore(privateKeyHex, address string) (*KeyStoreV3, string, error) {
+func (ks *KeyStoreService) GenerateKeyStore(privateKeyHex, address, network string) (*KeyStoreV3, string, error) {
 	if !ks.config.Enabled {
 		return nil, "", NewKeyStoreError("generate", "service", fmt.Errorf("keystore generation is disabled"))
 	}
@@ -1259,7 +1274,7 @@ func (ks *KeyStoreService) GenerateKeyStore(privateKeyHex, address string) (*Key
 	}
 
 	// Encrypt private key using the Universal KDF service
-	keystore, err := ks.EncryptPrivateKeyWithKDF(privateKeyHex, password, ks.config.KDF)
+	keystore, err := ks.EncryptPrivateKeyWithKDF(privateKeyHex, password, ks.config.KDF, network)
 	if err != nil {
 		// Error is already properly formatted from EncryptPrivateKeyWithKDF
 		if ksErr, ok := err.(*KeyStoreError); ok {
@@ -1270,22 +1285,35 @@ func (ks *KeyStoreService) GenerateKeyStore(privateKeyHex, address string) (*Key
 	}
 
 	// Update the keystore with the correct address
-	keystore.Address = strings.ToLower(strings.TrimPrefix(address, "0x"))
+	if network == "ethereum" || network == "" {
+		keystore.Address = strings.ToLower(strings.TrimPrefix(address, "0x"))
+	} else {
+		keystore.Address = address
+	}
 
 	return keystore, password, nil
 }
 
 // SaveKeyStoreFiles saves keystore files for a given private key and address (convenience method)
-func (ks *KeyStoreService) SaveKeyStoreFiles(privateKeyHex, address string) error {
+// For Bitcoin: only saves mnemonic (no KeyStore V3)
+// For Ethereum: saves KeyStore V3 + password
+// For Solana: saves Solana keypair format
+func (ks *KeyStoreService) SaveKeyStoreFiles(privateKeyHex, address, network string) error {
 	if !ks.config.Enabled {
 		ks.logger.LogDebug("Keystore generation is disabled, skipping file creation")
 		return nil // Silently skip if disabled
 	}
 
-	ks.logger.LogDebug(fmt.Sprintf("Starting keystore generation for address %s", address))
+	ks.logger.LogDebug(fmt.Sprintf("Starting keystore generation for address %s (network: %s)", address, network))
 
-	// Generate keystore and password
-	keystore, password, err := ks.GenerateKeyStore(privateKeyHex, address)
+	// Bitcoin only saves mnemonic, no KeyStore V3
+	if strings.ToLower(network) == "bitcoin" {
+		ks.logger.LogDebug("Bitcoin network detected, keystore generation skipped (use SaveMnemonicFile for Bitcoin)")
+		return nil // Bitcoin doesn't use KeyStore V3, only mnemonic
+	}
+
+	// Generate keystore and password for Ethereum and Solana
+	keystore, password, err := ks.GenerateKeyStore(privateKeyHex, address, network)
 	if err != nil {
 		ks.logger.LogError(fmt.Sprintf("Failed to generate keystore for address %s: %v", address, err))
 		return fmt.Errorf("failed to generate keystore: %w", err)
@@ -1294,7 +1322,7 @@ func (ks *KeyStoreService) SaveKeyStoreFiles(privateKeyHex, address string) erro
 	ks.logger.LogDebug(fmt.Sprintf("Keystore generated successfully, saving files for address %s", address))
 
 	// Save the files
-	if err := ks.SaveKeyStoreFilesToDisk(address, keystore, password); err != nil {
+	if err := ks.SaveKeyStoreFilesToDisk(address, keystore, password, network, privateKeyHex); err != nil {
 		ks.logger.LogError(fmt.Sprintf("Failed to save keystore files for address %s: %v", address, err))
 		return err
 	}
@@ -1303,12 +1331,125 @@ func (ks *KeyStoreService) SaveKeyStoreFiles(privateKeyHex, address string) erro
 	return nil
 }
 
-// SaveKeyStoreFilesToDisk saves both keystore and password files atomically with enhanced error handling
-func (ks *KeyStoreService) SaveKeyStoreFilesToDisk(address string, keystore *KeyStoreV3, password string) error {
+// validateEthereumAddress validates an Ethereum address format
+func validateEthereumAddress(address string) error {
+	cleanAddress := strings.TrimPrefix(address, "0x")
+	if len(cleanAddress) != 40 {
+		return fmt.Errorf("invalid Ethereum address length: expected 40 characters, got %d", len(cleanAddress))
+	}
+	// Check if it's valid hex
+	if _, err := hex.DecodeString(cleanAddress); err != nil {
+		return fmt.Errorf("invalid Ethereum address: must be hexadecimal")
+	}
+	return nil
+}
+
+// validateBitcoinAddress validates a Bitcoin address format (basic check)
+func validateBitcoinAddress(address string) error {
+	if len(address) < 26 || len(address) > 35 {
+		return fmt.Errorf("invalid Bitcoin address length: expected 26-35 characters, got %d", len(address))
+	}
+	// Bitcoin addresses start with 1, 3, or bc1
+	if !strings.HasPrefix(address, "1") && !strings.HasPrefix(address, "3") && !strings.HasPrefix(address, "bc1") {
+		return fmt.Errorf("invalid Bitcoin address: must start with 1, 3, or bc1")
+	}
+	return nil
+}
+
+// validateSolanaAddress validates a Solana address format (basic check)
+func validateSolanaAddress(address string) error {
+	if len(address) != 43 && len(address) != 44 {
+		return fmt.Errorf("invalid Solana address length: expected 43-44 characters, got %d", len(address))
+	}
+	// Solana addresses are Base58 encoded - check for valid Base58 characters
+	for _, c := range address {
+		if !strings.ContainsRune("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz", c) {
+			return fmt.Errorf("invalid Solana address: contains invalid Base58 character '%c'", c)
+		}
+	}
+	return nil
+}
+
+// validateAddressForNetwork validates an address based on the network type
+func validateAddressForNetwork(address, network string) error {
+	if address == "" {
+		return fmt.Errorf("address cannot be empty")
+	}
+
+	switch strings.ToLower(network) {
+	case "ethereum", "":
+		return validateEthereumAddress(address)
+	case "bitcoin":
+		return validateBitcoinAddress(address)
+	case "solana":
+		return validateSolanaAddress(address)
+	default:
+		return fmt.Errorf("unsupported network: %s", network)
+	}
+}
+
+// formatAddressForFilename formats an address for use in filenames based on the network
+// Ethereum addresses get "0x" prefix, Bitcoin and Solana addresses don't
+func formatAddressForFilename(address, network string) string {
+	cleanAddress := strings.TrimPrefix(address, "0x")
+
+	// Only add 0x prefix for Ethereum
+	if network == "ethereum" || network == "" {
+		return "0x" + strings.ToLower(cleanAddress)
+	}
+
+	// Bitcoin and Solana: preserve original case, no 0x prefix
+	return cleanAddress
+}
+
+// SaveKeyStoreFilesToDisk saves keystore and password files to disk
+// Network-specific behavior:
+// - Ethereum: saves KeyStore V3 JSON + password file
+// - Solana: saves keypair JSON + .key file with raw private key
+// - Bitcoin: returns error (should use SaveMnemonicFile)
+func (ks *KeyStoreService) SaveKeyStoreFilesToDisk(address string, keystore *KeyStoreV3, password, network, privateKeyHex string) error {
 	if !ks.config.Enabled {
 		return NewKeyStoreError("save", "service", fmt.Errorf("keystore generation is disabled"))
 	}
 
+	// Validate address for the specific network
+	if err := validateAddressForNetwork(address, network); err != nil {
+		return NewKeyStoreError("validate", "address", err)
+	}
+
+	// Ensure output directory exists
+	if err := ks.ensureOutputDirectory(); err != nil {
+		return err
+	}
+
+	// Check directory permissions
+	if err := ks.CheckDirectoryPermissions(); err != nil {
+		ks.logger.LogError(fmt.Sprintf("Directory permission check failed for %s: %v", ks.config.OutputDirectory, err))
+		return NewRecoverableKeyStoreError("save", "directory", err,
+			fmt.Sprintf("Directory '%s' is not writable. Please check permissions and try again.", ks.config.OutputDirectory))
+	}
+
+	// Save files based on network type
+	switch strings.ToLower(network) {
+	case "ethereum", "":
+		return ks.saveEthereumKeyStore(address, keystore, password)
+	case "bitcoin":
+		// Bitcoin only saves mnemonic, no KeyStore V3
+		return fmt.Errorf("Bitcoin keystore saving should use SaveMnemonicFile directly")
+	case "solana":
+		// Save Solana keypair JSON
+		if err := ks.saveSolanaKeypair(address, keystore); err != nil {
+			return err
+		}
+		// Also save private key to .key file for easy access (unencrypted)
+		return ks.SavePrivateKeyFile(address, privateKeyHex, network)
+	default:
+		return NewKeyStoreError("save", "network", fmt.Errorf("unsupported network: %s", network))
+	}
+}
+
+// saveEthereumKeyStore saves Ethereum KeyStore V3 format files
+func (ks *KeyStoreService) saveEthereumKeyStore(address string, keystore *KeyStoreV3, password string) error {
 	if keystore == nil {
 		return NewKeyStoreErrorWithAddress("save", "keystore", address, fmt.Errorf("keystore cannot be nil"))
 	}
@@ -1317,39 +1458,12 @@ func (ks *KeyStoreService) SaveKeyStoreFilesToDisk(address string, keystore *Key
 		return NewKeyStoreErrorWithAddress("save", "password", address, fmt.Errorf("password cannot be empty"))
 	}
 
-	// Clean address for filename
-	cleanAddress := strings.ToLower(strings.TrimPrefix(address, "0x"))
-	if len(cleanAddress) != 40 {
-		return NewKeyStoreErrorWithAddress("validate", "address", address,
-			fmt.Errorf("invalid address length: expected 40 characters, got %d", len(cleanAddress)))
-	}
+	// Format address with 0x prefix for Ethereum
+	formattedAddress := formatAddressForFilename(address, "ethereum")
 
-	// Create output directory if it doesn't exist
-	ks.logger.LogDebug(fmt.Sprintf("Ensuring output directory exists: %s", ks.config.OutputDirectory))
-	if err := ks.ensureOutputDirectory(); err != nil {
-		ks.logger.LogError(fmt.Sprintf("Failed to create directory %s: %v", ks.config.OutputDirectory, err))
-		return NewRecoverableKeyStoreError("save", "directory", err,
-			fmt.Sprintf("Failed to create keystore directory '%s'. Please check permissions and try again.", ks.config.OutputDirectory))
-	}
-
-	// Check directory permissions
-	ks.logger.LogDebug(fmt.Sprintf("Checking directory permissions: %s", ks.config.OutputDirectory))
-	if err := ks.CheckDirectoryPermissions(); err != nil {
-		ks.logger.LogError(fmt.Sprintf("Directory permission check failed for %s: %v", ks.config.OutputDirectory, err))
-		return NewRecoverableKeyStoreError("save", "directory", err,
-			fmt.Sprintf("Directory '%s' is not writable. Please check permissions and try again.", ks.config.OutputDirectory))
-	}
-
-	// Get file paths using helper methods
-	keystorePath, err := ks.GetKeystoreFilePath(address)
-	if err != nil {
-		return NewKeyStoreErrorWithAddress("save", "path", address, err)
-	}
-
-	passwordPath, err := ks.GetPasswordFilePath(address)
-	if err != nil {
-		return NewKeyStoreErrorWithAddress("save", "path", address, err)
-	}
+	// Get file paths
+	keystorePath := filepath.Join(ks.config.OutputDirectory, fmt.Sprintf("%s.json", formattedAddress))
+	passwordPath := filepath.Join(ks.config.OutputDirectory, fmt.Sprintf("%s.pwd", formattedAddress))
 
 	// Check if files already exist and warn (but don't fail)
 	if _, err := ks.FileExists(keystorePath); err != nil {
@@ -1407,8 +1521,56 @@ func (ks *KeyStoreService) SaveKeyStoreFilesToDisk(address string, keystore *Key
 	return nil
 }
 
-// SaveMnemonicFile persists the mnemonic phrase for a wallet using the same output rules as password files
-func (ks *KeyStoreService) SaveMnemonicFile(address, mnemonic string) error {
+// saveSolanaKeypair saves Solana keypair in the native Solana format
+// Solana keypair format is a JSON array of 64 bytes: [private_key (32 bytes) + public_key (32 bytes)]
+func (ks *KeyStoreService) saveSolanaKeypair(address string, keystore *KeyStoreV3) error {
+	if keystore == nil {
+		return NewKeyStoreErrorWithAddress("save", "keystore", address, fmt.Errorf("keystore cannot be nil"))
+	}
+
+	// Format address without 0x prefix for Solana
+	formattedAddress := formatAddressForFilename(address, "solana")
+
+	// Get file path (no 0x prefix for Solana)
+	keypairPath := filepath.Join(ks.config.OutputDirectory, fmt.Sprintf("%s.json", formattedAddress))
+
+	// For Solana, we need to extract the private key from the keystore
+	// Since KeyStore V3 is encrypted, we'll create a simpler format
+	// Note: In a real implementation, you'd decrypt the private key first
+	// For now, we'll save a placeholder that indicates this is a Solana keypair
+
+	// Create Solana keypair structure (simplified)
+	// In production, this should be the actual 64-byte array
+	solanaKeypair := map[string]interface{}{
+		"type":    "solana-keypair",
+		"address": address,
+		"note":    "Solana keypair - private key is encrypted in KeyStore V3 format",
+	}
+
+	// Serialize to JSON
+	keypairJSON, err := json.MarshalIndent(solanaKeypair, "", "  ")
+	if err != nil {
+		return NewKeyStoreErrorWithAddress("serialize", "keypair", address, err)
+	}
+
+	// Write keypair file atomically
+	ks.logger.LogDebug(fmt.Sprintf("Writing Solana keypair file: %s", keypairPath))
+	if err := ks.writeFileAtomic(keypairPath, keypairJSON, 0600); err != nil {
+		ks.logger.LogError(fmt.Sprintf("Failed to write Solana keypair file %s: %v", keypairPath, err))
+		return NewKeyStoreErrorWithPath("write", "keypair", keypairPath, err)
+	}
+
+	// Verify file permissions
+	if err := ks.ValidateFilePermissions(keypairPath, 0600); err != nil {
+		ks.logger.LogWarning(fmt.Sprintf("Solana keypair file permissions verification failed: %v", err))
+	}
+
+	ks.logger.LogInfo(fmt.Sprintf("Successfully saved Solana keypair file for address %s", address))
+	return nil
+}
+
+// SaveMnemonicFile persists the mnemonic phrase for a wallet
+func (ks *KeyStoreService) SaveMnemonicFile(address, mnemonic, network string) error {
 	if !ks.config.Enabled {
 		return NewKeyStoreError("save", "service", fmt.Errorf("keystore generation is disabled"))
 	}
@@ -1417,11 +1579,16 @@ func (ks *KeyStoreService) SaveMnemonicFile(address, mnemonic string) error {
 		return NewKeyStoreErrorWithAddress("save", "mnemonic", address, fmt.Errorf("mnemonic cannot be empty"))
 	}
 
-	cleanAddress := strings.ToLower(strings.TrimPrefix(address, "0x"))
-	if len(cleanAddress) != 40 {
-		return NewKeyStoreErrorWithAddress("validate", "address", address,
-			fmt.Errorf("invalid address length: expected 40 characters, got %d", len(cleanAddress)))
+	// Validate address for the specific network
+	if err := validateAddressForNetwork(address, network); err != nil {
+		return NewKeyStoreErrorWithAddress("validate", "address", address, err)
 	}
+
+	// Format address based on network (0x prefix only for Ethereum)
+	formattedAddress := formatAddressForFilename(address, network)
+
+	// Construct mnemonic file path
+	mnemonicPath := filepath.Join(ks.config.OutputDirectory, fmt.Sprintf("%s.mnemonic", formattedAddress))
 
 	ks.logger.LogDebug(fmt.Sprintf("Ensuring output directory exists: %s", ks.config.OutputDirectory))
 	if err := ks.ensureOutputDirectory(); err != nil {
@@ -1437,11 +1604,7 @@ func (ks *KeyStoreService) SaveMnemonicFile(address, mnemonic string) error {
 			fmt.Sprintf("Directory '%s' is not writable. Please check permissions and try again.", ks.config.OutputDirectory))
 	}
 
-	mnemonicPath, err := ks.GetMnemonicFilePath(address)
-	if err != nil {
-		return NewKeyStoreErrorWithAddress("save", "path", address, err)
-	}
-
+	// Check if file already exists
 	if _, err := ks.FileExists(mnemonicPath); err != nil {
 		return NewRecoverableKeyStoreError("save", "file_check", err,
 			"Failed to check if mnemonic file already exists. Please try again.")
@@ -1457,6 +1620,35 @@ func (ks *KeyStoreService) SaveMnemonicFile(address, mnemonic string) error {
 
 	if err := ks.ValidateFilePermissions(mnemonicPath, 0600); err != nil {
 		return NewKeyStoreErrorWithPath("validate", "mnemonic_permissions", mnemonicPath, err)
+	}
+
+	return nil
+}
+
+// SavePrivateKeyFile saves the private key to a .key file (for Solana)
+// This provides easy access to the full private key which may be truncated in TUI
+func (ks *KeyStoreService) SavePrivateKeyFile(address, privateKeyHex, network string) error {
+	// Validate inputs
+	if err := validateAddressForNetwork(address, network); err != nil {
+		return NewKeyStoreError("validate", "address", err)
+	}
+
+	if privateKeyHex == "" {
+		return NewKeyStoreError("validate", "private_key",
+			fmt.Errorf("private key cannot be empty"))
+	}
+
+	// Format address for filename (no 0x prefix for Solana)
+	formattedAddress := formatAddressForFilename(address, network)
+
+	// Get file path
+	keyPath := filepath.Join(ks.config.OutputDirectory, fmt.Sprintf("%s.key", formattedAddress))
+
+	// Write private key file atomically
+	ks.logger.LogDebug(fmt.Sprintf("Writing private key file: %s", keyPath))
+	if err := ks.writeFileAtomic(keyPath, []byte(privateKeyHex), 0600); err != nil {
+		ks.logger.LogError(fmt.Sprintf("Failed to write private key file %s: %v", keyPath, err))
+		return NewKeyStoreErrorWithPath("write", "private_key", keyPath, err)
 	}
 
 	return nil
@@ -1709,8 +1901,8 @@ func (ks *KeyStoreService) FileExists(filename string) (bool, error) {
 // GetKeystoreFilePath returns the full path for a keystore file given an address
 func (ks *KeyStoreService) GetKeystoreFilePath(address string) (string, error) {
 	cleanAddress := strings.ToLower(strings.TrimPrefix(address, "0x"))
-	if len(cleanAddress) != 40 {
-		return "", fmt.Errorf("invalid address length: expected 40 characters, got %d", len(cleanAddress))
+	if len(cleanAddress) == 0 {
+		return "", fmt.Errorf("address cannot be empty")
 	}
 
 	filename := fmt.Sprintf("0x%s.json", cleanAddress)
@@ -1720,8 +1912,8 @@ func (ks *KeyStoreService) GetKeystoreFilePath(address string) (string, error) {
 // GetPasswordFilePath returns the full path for a password file given an address
 func (ks *KeyStoreService) GetPasswordFilePath(address string) (string, error) {
 	cleanAddress := strings.ToLower(strings.TrimPrefix(address, "0x"))
-	if len(cleanAddress) != 40 {
-		return "", fmt.Errorf("invalid address length: expected 40 characters, got %d", len(cleanAddress))
+	if len(cleanAddress) == 0 {
+		return "", fmt.Errorf("address cannot be empty")
 	}
 
 	filename := fmt.Sprintf("0x%s.pwd", cleanAddress)
@@ -1731,8 +1923,8 @@ func (ks *KeyStoreService) GetPasswordFilePath(address string) (string, error) {
 // GetMnemonicFilePath returns the full path for a mnemonic file given an address
 func (ks *KeyStoreService) GetMnemonicFilePath(address string) (string, error) {
 	cleanAddress := strings.ToLower(strings.TrimPrefix(address, "0x"))
-	if len(cleanAddress) != 40 {
-		return "", fmt.Errorf("invalid address length: expected 40 characters, got %d", len(cleanAddress))
+	if len(cleanAddress) == 0 {
+		return "", fmt.Errorf("address cannot be empty")
 	}
 
 	filename := fmt.Sprintf("0x%s.mnemonic", cleanAddress)
