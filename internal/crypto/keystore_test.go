@@ -1465,7 +1465,7 @@ func TestKeyStoreService_SaveKeyStoreFiles(t *testing.T) {
 			}
 			service := NewKeyStoreService(config)
 
-			err := service.SaveKeyStoreFilesToDisk(tt.address, tt.keystore, tt.password, "ethereum")
+			err := service.SaveKeyStoreFilesToDisk(tt.address, tt.keystore, tt.password, "ethereum", "")
 
 			if tt.expectError {
 				if err == nil {
@@ -1678,7 +1678,7 @@ func TestKeyStoreService_EndToEndWorkflow(t *testing.T) {
 			}
 
 			// Save files
-			err = service.SaveKeyStoreFilesToDisk(address, keystore, password, "ethereum")
+			err = service.SaveKeyStoreFilesToDisk(address, keystore, password, "ethereum", privateKey)
 			if err != nil {
 				t.Fatalf("SaveKeyStoreFiles failed: %v", err)
 			}
@@ -2361,7 +2361,7 @@ func TestKeyStoreService_SaveKeyStoreFiles_EnhancedErrorHandling(t *testing.T) {
 	password := "TestPassword123!"
 
 	// Test successful save
-	err := service.SaveKeyStoreFilesToDisk(address, keystore, password, "ethereum")
+	err := service.SaveKeyStoreFilesToDisk(address, keystore, password, "ethereum", "")
 	if err != nil {
 		t.Errorf("Expected no error but got: %v", err)
 	}
@@ -2383,7 +2383,7 @@ func TestKeyStoreService_SaveKeyStoreFiles_EnhancedErrorHandling(t *testing.T) {
 	}
 
 	// Test overwriting existing files
-	err = service.SaveKeyStoreFilesToDisk(address, keystore, password, "ethereum")
+	err = service.SaveKeyStoreFilesToDisk(address, keystore, password, "ethereum", "")
 	if err != nil {
 		t.Errorf("Expected no error when overwriting files but got: %v", err)
 	}
